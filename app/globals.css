@@ -116,6 +116,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
+  body {
+    width: 100%;
+    height: auto;
+    overflow: hidden;
+  }
   body {
     @apply bg-background text-foreground;
   }

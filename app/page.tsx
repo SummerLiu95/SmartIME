@@ -9,7 +9,7 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <main className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8 bg-background text-foreground">
+    <main className="relative w-full flex flex-col items-center justify-center px-4 py-8 bg-background text-foreground">
       {/* Top-right theme toggle */}
       <div className="absolute top-4 right-4 z-10">
         <ModeToggle />

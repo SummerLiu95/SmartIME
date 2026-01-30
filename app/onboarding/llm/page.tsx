@@ -61,10 +61,16 @@ export default function LLMOnboardingPage() {
     try {
       await API.checkLLMConnection(config);
       setStatus("success");
-    } catch (e: any) {
-      console.error("Connection failed", e);
+    } catch (error) {
+      console.error("Connection failed", error);
       setStatus("error");
-      setErrorMsg(typeof e === 'string' ? e : (e.message || "连接失败，请检查配置"));
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "";
+      setErrorMsg(message || "连接失败，请检查配置");
     }
   };
 
@@ -78,12 +84,12 @@ export default function LLMOnboardingPage() {
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-white dark:bg-zinc-900">
+    <div className="w-full bg-white dark:bg-zinc-900">
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
-        className="relative flex flex-col items-center h-full p-8 pb-8"
+        className="relative flex flex-col items-center min-h-fit w-full max-w-[520px] mx-auto p-8 pb-8"
       >
         {/* Header Icon */}
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100 dark:bg-purple-900/30">

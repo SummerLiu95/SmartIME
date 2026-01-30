@@ -47,13 +47,13 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-white dark:bg-zinc-900">
+    <div className="w-full bg-white dark:bg-zinc-900">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
         className={cn(
-          "relative flex flex-col items-center h-full",
+          "relative flex flex-col items-center min-h-fit w-full max-w-[480px] mx-auto",
           "p-8 pb-8"
         )}
       >
