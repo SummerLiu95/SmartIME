@@ -89,6 +89,40 @@ impl LLMClient {
         })
     }
 
+    /// 检查 LLM 连接配置是否有效
+    pub async fn check_connection(config: &LLMConfig) -> Result<()> {
+        if config.api_key.is_empty() {
+            return Err(AppError::Llm("API Key cannot be empty".to_string()));
+        }
+
+        let client = Client::new();
+        let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+
+        let request = ChatCompletionRequest {
+            model: config.model.clone(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hi".to_string(),
+            }],
+            temperature: 0.1,
+        };
+
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let error_text = resp.text().await?;
+            return Err(AppError::Llm(format!("Connection failed: {}", error_text)));
+        }
+
+        Ok(())
+    }
+
     /// 预测应用最合适的输入法
     pub async fn predict(
         &self,

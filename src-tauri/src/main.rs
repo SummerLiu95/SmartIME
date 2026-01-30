@@ -33,6 +33,7 @@ fn main() {
             command::cmd_get_config,
             command::cmd_save_llm_config,
             command::cmd_get_llm_config,
+            command::cmd_check_llm_connection,
             command::cmd_scan_and_predict,
             command::cmd_check_permissions,
             command::cmd_open_system_settings,

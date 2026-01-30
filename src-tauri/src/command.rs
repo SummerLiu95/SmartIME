@@ -33,6 +33,12 @@ pub fn cmd_get_config(state: State<'_, AppState>) -> Result<AppConfig> {
 // LLM Commands
 
 #[tauri::command]
+pub async fn cmd_check_llm_connection(config: LLMConfig) -> Result<bool> {
+    crate::llm::LLMClient::check_connection(&config).await?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub fn cmd_save_llm_config(config: LLMConfig, state: State<'_, AppState>) -> Result<()> {
     let mut llm = state.llm.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
     llm.update_config(config);

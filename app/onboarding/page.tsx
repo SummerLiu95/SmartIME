@@ -6,8 +6,10 @@ import { motion } from "framer-motion";
 import { API } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 
 export default function OnboardingPage() {
+  const router = useRouter();
   const [permissionStatus, setPermissionStatus] = useState<
     "idle" | "checking" | "granted" | "denied"
   >("idle");
@@ -123,7 +125,13 @@ export default function OnboardingPage() {
               permissionStatus === "granted" && "bg-green-600 hover:bg-green-700",
               permissionStatus === "denied" && "bg-red-600 hover:bg-red-700"
             )}
-            onClick={() => checkPermission(false)}
+            onClick={() => {
+              if (permissionStatus === "granted") {
+                router.push("/onboarding/llm");
+              } else {
+                checkPermission(false);
+              }
+            }}
             disabled={permissionStatus === "checking"}
           >
             {permissionStatus === "checking" ? (

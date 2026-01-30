@@ -13,6 +13,12 @@ export type AppRule = {
   is_ai_generated: boolean;
 };
 
+export type LLMConfig = {
+  api_key: string;
+  model: string;
+  base_url: string;
+};
+
 export const API = {
   /**
    * 检查辅助功能权限
@@ -40,5 +46,26 @@ export const API = {
    */
   scanAndPredict: async (): Promise<AppRule[]> => {
     return invoke('cmd_scan_and_predict');
+  },
+
+  /**
+   * 获取 LLM 配置
+   */
+  getLLMConfig: async (): Promise<LLMConfig> => {
+    return invoke('cmd_get_llm_config');
+  },
+
+  /**
+   * 保存 LLM 配置
+   */
+  saveLLMConfig: async (config: LLMConfig): Promise<void> => {
+    return invoke('cmd_save_llm_config', { config });
+  },
+
+  /**
+   * 检查 LLM 连接
+   */
+  checkLLMConnection: async (config: LLMConfig): Promise<boolean> => {
+    return invoke('cmd_check_llm_connection', { config });
   },
 };
