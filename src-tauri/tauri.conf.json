@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "SmartIME",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
+        "width": 384,
+        "height": 500,
+        "resizable": false,
         "fullscreen": false
       }
     ],
