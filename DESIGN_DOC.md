@@ -17,7 +17,7 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
 *   **Step 2: LLM Settings (New)**:
     *   **Form**:
         *   `API Key *`: Password input box (with show/hide toggle), Info Icon on the right.
-        *   `Model *`: Dropdown select box (Select), preset "GPT-4o", "GPT-4-Turbo", "Claude-3.5-Sonnet", etc., supports custom input.
+        *   `Model *`: Text input box (Input), default placeholder "gpt-4o".
         *   `Base URL`: Text input box, default placeholder "https://api.openai.com/v1".
     *   **Action**: "Test Connection" button (Loading state feedback) -> Show "Start Scanning" button upon success.
 *   **Step 3: Scan & Generate**: Progress bar displays application scanning and AI analysis progress.
@@ -27,8 +27,6 @@ Small window pops up when clicking the menu bar icon.
 *   **Header**: App Name (SmartIME), right side includes "Settings" gear icon and "Pause" switch.
 *   **Current App**: Displays current foreground app's icon, name, and currently effective input method status.
     *   *Animation*: When app switches, app icon and name should execute slight **Fade In / Fade Out** or **Slide Y** animation for smooth transition.
-*   **Quick Switch**: A prominent Toggle or Segmented Control, allowing user to quickly correct the current App's default input method (e.g., correct from "English" to "Chinese").
-    *   *Animation*: When clicking switch, slider should have Spring damping effect.
 
 #### C. Main Settings Panel (Main Window)
 *   **Tabs**:

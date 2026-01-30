@@ -22,17 +22,17 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **BE-01** | **Input Method Management Module** | INF-04 | Implement `input_source.rs`: Get system input method list (`TISCreateInputSourceList`) and switch input method (`TISSelectInputSource`). | 1. Can correctly list all currently enabled system input method IDs.<br>2. Can successfully switch input method via ID. |
-| **BE-02** | **App Observer Module** | INF-04 | Implement `observer.rs`: Listen for `NSWorkspaceDidActivateApplicationNotification`. | When switching foreground apps, console can print the new app's Bundle ID in real-time. |
-| **BE-03** | **LLM Client Module** | INF-04 | Implement `llm.rs`: Encapsulate Reqwest requests, support OpenAI format Chat Completion API. | Can send test requests and correctly parse returned JSON. |
+| **BE-01** | **Input Method Management Module** | INF-03 | Implement `input_source.rs`: Get system input method list (`TISCreateInputSourceList`) and switch input method (`TISSelectInputSource`). | 1. Can correctly list all currently enabled system input method IDs.<br>2. Can successfully switch input method via ID. |
+| **BE-02** | **App Observer Module** | INF-03 | Implement `observer.rs`: Listen for `NSWorkspaceDidActivateApplicationNotification`. | When switching foreground apps, console can print the new app's Bundle ID in real-time. |
+| **BE-03** | **LLM Client Module** | INF-03 | Implement `llm.rs`: Encapsulate Reqwest requests, support OpenAI format Chat Completion API. | Can send test requests and correctly parse returned JSON. |
 | **BE-04** | **System App Scanning Module** | INF-03 | Implement `system_apps.rs`: Scan system apps using `walkdir` and `plist`. | Can correctly traverse `/Applications` and parse out app Bundle IDs and names. |
-| **BE-05** | **Configuration Persistence Module** | INF-04 | Implement configuration read/write logic (LLM config, App rule table), ensuring data is stored securely. | After restarting the app, configuration data is not lost; API Key is not shown in plain text. |
+| **BE-05** | **Configuration Persistence Module** | INF-03 | Implement configuration read/write logic (LLM config, App rule table), ensuring data is stored securely. | After restarting the app, configuration data is not lost; API Key is not shown in plain text. |
 | **BE-06** | **Tauri Command Registration** | BE-01~05 | Register IPC commands like `get_installed_apps`, `save_llm_config`, `scan_and_predict`. | Frontend can successfully call these commands and get expected return values. |
 
 ## 4. Frontend Features Development
 
 ### 4.1 First Launch Permission Check Interface (Onboarding Step 1)
-*Reference: Screenshot 12_294*
+*Reference: [Permission Check Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-245&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
@@ -40,15 +40,15 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-ONB-02** | **Permission Detection Logic** | BE-06 | Call backend `check_permissions` command, recheck permission status when clicking "I have enabled". | Prompt retry when permission not enabled; auto jump to next step after enabled. |
 
 ### 4.2 LLM Settings Interface (Onboarding Step 2 / Settings Tab)
-*Reference: Figma LLM Settings*
+*Reference: [LLM Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-2)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-LLM-01** | **LLM Form Development** | UI-01 | Implement API Key (with show/hide toggle), Model (dropdown select), Base URL form. | Form validation logic is correct (required fields check). |
+| **FE-LLM-01** | **LLM Form Development** | UI-01 | Implement API Key (with show/hide toggle), Model (text input), Base URL form. | Form validation logic is correct (required fields check). |
 | **FE-LLM-02** | **Connection Test Logic** | BE-03 | Click "Test Connection" to call backend interface, handle Loading/Success/Error states. | Show green prompt on connection success; show specific error message on failure. |
 
 ### 4.3 First Scan & Rule Generation Interface (Onboarding Step 3)
-*Reference: Screenshot 12_47*
+*Reference: [First Scan & Rule Generation Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-46&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
@@ -56,16 +56,15 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-SCAN-02** | **Prediction Flow Integration** | BE-06 | Call `scan_and_predict`, get generated rule list and store in local state. | Successfully obtain rule list containing Bundle ID and Input Source ID. |
 
 ### 4.4 Menu Bar App Popup Interface (Tray Window)
-*Reference: Screenshot 12_247*
+*Reference: [Menu Bar App Popup Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-246)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
 | **FE-TRAY-01** | **Tray Window UI** | UI-01 | Implement compact card layout, displaying current App icon, name, AI mode status. | Interface size fixed, layout compact and aesthetic. |
 | **FE-TRAY-02** | **Real-time Status Sync** | BE-02 | Listen for `app_focused` event, update current App info and input method status in real-time. | When switching Apps, tray window content refreshes instantly. |
-| **FE-TRAY-03** | **Quick Switch Interaction** | BE-01 | Implement "CN/EN" segmented controller, immediately call backend to switch input method and update rules upon click. | System input method actually changes after clicking switch. |
 
 ### 4.5 App Main Settings Interface (Main Settings)
-*Reference: Screenshot 3_262*
+*Reference: [Main Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-84&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |

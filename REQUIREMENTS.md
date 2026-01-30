@@ -32,7 +32,22 @@ graph TD
     I --> F
 ```
 
-### 2.2 Core Function Usage Flow: Automatic Switching
+### 2.2 Cold Start Flow (Subsequent Launch)
+
+```mermaid
+graph TD
+    A[User/System Starts SmartIME] --> B{Check Local Config}
+    B -- Config Missing --> C["Jump to First Launch Flow (2.1)"]
+    B -- Config Exists --> D{Check Permissions}
+    D -- Revoked --> E[Prompt to Re-enable Permissions]
+    D -- Valid --> F[Initialize Background Services]
+    F --> G["Load Saved Rules & LLM Config"]
+    G --> H[Register System Tray Icon]
+    H --> I[Start Input Source Observer]
+    I --> J["Ready (Resident in Background)"]
+```
+
+### 2.3 Core Function Usage Flow: Automatic Switching
 
 ```mermaid
 sequenceDiagram
@@ -68,7 +83,7 @@ sequenceDiagram
     *   On first application launch, forcibly require user to configure LLM API information.
     *   Fields included:
         *   **API Key** (Required, masked display)
-        *   **Model** (Required, dropdown selection, default recommendation GPT-4o, etc.)
+        *   **Model** (Required, text input, default recommendation GPT-4o, etc.)
         *   **Base URL** (Optional, defaults to `https://api.openai.com/v1`)
     *   Must provide "Test Connection" function, allowing continuation only after valid configuration verification.
 *   **FR-02 AI Intelligent Prediction**:
