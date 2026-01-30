@@ -126,6 +126,42 @@ SmartIME/
     *   前端负责可视化配置（应用列表 -> 输入法映射）。
     *   配置存储在本地 JSON 文件中（使用 `tauri-plugin-store` 或 `fs` 模块）。
 
+### 3.3 LLM 环境变量配置规范
+
+为了在开发与部署中统一管理 LLM 配置，SmartIME 采用独立的环境变量文件，避免将 API Key 写入代码或配置文件。
+
+**文件约定**
+*   **文件名**: `.env.llm`（实际使用）与 `.env.llm.example`（模板）
+*   **格式**: 标准 `KEY=VALUE`，支持注释（以 `#` 开头）
+*   **版本控制**: `.env.llm` 必须被忽略，`.env.llm.example` 可提交用于参考
+
+**配置项**
+| Key | 类型 | 必填 | 说明 | 示例 |
+| :--- | :--- | :--- | :--- | :--- |
+| `LLM_API_KEY` | string | 是 | LLM 服务 API Key | `sk-xxxx` |
+| `LLM_MODEL` | string | 是 | LLM 模型名称 | `gpt-4o-mini` |
+| `LLM_BASE_URL` | string | 是 | LLM 服务基础地址 | `https://api.openai.com/v1` |
+
+**模板示例**
+```env
+# LLM configuration
+LLM_API_KEY=sk-your-key-here
+LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.openai.com/v1
+```
+
+**加载方式（Rust 侧约定）**
+*   在应用启动时读取 `.env.llm`，解析并注入到 `LLMConfig`（结构同前端 `LLMConfig`）。
+*   未配置或读取失败时，应返回明确错误提示，引导用户完成配置。
+*   读取方式可选：
+    *   直接使用 `std::env::var` 读取已注入的环境变量
+    *   使用 `dotenvy` 等库加载 `.env.llm` 后再读取（如后续引入依赖）
+
+**测试最佳实践**
+*   单元测试中通过 `std::env::set_var` 注入测试用变量，测试结束后清理。
+*   避免读取真实 `.env.llm`，确保测试可重复、可并行。
+*   仅在测试中使用虚拟 Key 与本地假地址。
+
 ## 4. 系统详细设计 (System Design)
 
 ### 4.1 前后端通信 (Frontend-Backend Communication)
