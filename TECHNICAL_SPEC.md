@@ -88,6 +88,7 @@ SmartIME/
 │   │   ├── command.rs      # 定义供前端调用的 Tauri Commands
 │   │   ├── input_source.rs # macOS 输入法切换核心逻辑 (FFI)
 │   │   ├── observer.rs     # 监听 NSWorkspace 活动应用变化
+│   │   ├── system_apps.rs  # (新增) 系统应用扫描与解析 (Walkdir + Plist)
 │   │   └── llm.rs          # (新增) LLM API 调用与配置管理
 │   ├── tauri.conf.json     # Tauri 配置文件
 │   └── Cargo.toml          # Rust 依赖管理
@@ -122,7 +123,11 @@ SmartIME/
     *   依赖 `reqwest` (feature: `json`, `rustls-tls`)。
     *   负责存储和读取 LLM 配置（API Key 建议使用 `tauri-plugin-store` 或加密存储）。
     *   负责向 OpenAI 兼容接口发送预测请求。
-4.  **Config Manager (Hybrid)**:
+4.  **System Apps Module (Rust)**:
+    *   依赖 `walkdir` (遍历目录) 和 `plist` (解析 Info.plist)。
+    *   提供 `get_installed_apps` 函数，扫描 `/Applications` 和 `~/Applications`。
+    *   提取应用名称和 Bundle ID，用于构建预测上下文。
+5.  **Config Manager (Hybrid)**:
     *   前端负责可视化配置（应用列表 -> 输入法映射）。
     *   配置存储在本地 JSON 文件中（使用 `tauri-plugin-store` 或 `fs` 模块）。
 

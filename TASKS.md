@@ -25,8 +25,9 @@
 | **BE-01** | **输入法管理模块** | INF-04 | 实现 `input_source.rs`：获取系统输入法列表 (`TISCreateInputSourceList`) 和切换输入法 (`TISSelectInputSource`)。 | 1. 能正确列出当前系统所有启用的输入法 ID。<br>2. 能通过 ID 成功切换输入法。 |
 | **BE-02** | **应用监听模块** | INF-04 | 实现 `observer.rs`：监听 `NSWorkspaceDidActivateApplicationNotification`。 | 切换前台应用时，控制台能实时打印新应用的 Bundle ID。 |
 | **BE-03** | **LLM 客户端模块** | INF-04 | 实现 `llm.rs`：封装 Reqwest 请求，支持 OpenAI 格式的 Chat Completion API。 | 能发送测试请求并正确解析返回的 JSON。 |
-| **BE-04** | **配置持久化模块** | INF-04 | 实现配置的读写逻辑（LLM 配置、App 规则表），确保数据安全存储。 | 重启应用后，配置数据不丢失；API Key 不明文显示。 |
-| **BE-05** | **Tauri 命令注册** | BE-01~04 | 注册 `get_installed_apps`, `save_llm_config`, `scan_and_predict` 等 IPC 命令。 | 前端能成功调用这些命令并获取预期返回值。 |
+| **BE-04** | **系统应用扫描模块** | INF-03 | 实现 `system_apps.rs`：使用 `walkdir` 和 `plist` 扫描系统应用。 | 能正确遍历 `/Applications` 并解析出应用的 Bundle ID 和名称。 |
+| **BE-05** | **配置持久化模块** | INF-04 | 实现配置的读写逻辑（LLM 配置、App 规则表），确保数据安全存储。 | 重启应用后，配置数据不丢失；API Key 不明文显示。 |
+| **BE-06** | **Tauri 命令注册** | BE-01~05 | 注册 `get_installed_apps`, `save_llm_config`, `scan_and_predict` 等 IPC 命令。 | 前端能成功调用这些命令并获取预期返回值。 |
 
 ## 4. 界面模块开发 (Frontend Features)
 
@@ -36,7 +37,7 @@
 | 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
 | :--- | :--- | :--- | :--- | :--- |
 | **FE-ONB-01** | **权限检查 UI 实现** | UI-02 | 实现权限授予引导页，包含图标、说明文案和“设置 > 隐私...”路径指引。 | 界面还原度高，适配 Light/Dark 模式。 |
-| **FE-ONB-02** | **权限检测逻辑** | BE-05 | 调用后端 `check_permissions` 命令，点击“我已开启”时复查权限状态。 | 权限未开启时提示重试；开启后自动跳转下一步。 |
+| **FE-ONB-02** | **权限检测逻辑** | BE-06 | 调用后端 `check_permissions` 命令，点击“我已开启”时复查权限状态。 | 权限未开启时提示重试；开启后自动跳转下一步。 |
 
 ### 4.2 LLM 设置界面 (Onboarding Step 2 / Settings Tab)
 *参考: Figma LLM Settings*
@@ -52,7 +53,7 @@
 | 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
 | :--- | :--- | :--- | :--- | :--- |
 | **FE-SCAN-01** | **扫描进度 UI** | UI-01 | 实现进度条动画和状态文字（扫描中 -> 分析中 -> 生成完毕）。 | 动画流畅，进度反馈真实。 |
-| **FE-SCAN-02** | **预测流程集成** | BE-05 | 调用 `scan_and_predict`，获取生成的规则列表并存入本地状态。 | 成功获取到包含 Bundle ID 和 Input Source ID 的规则列表。 |
+| **FE-SCAN-02** | **预测流程集成** | BE-06 | 调用 `scan_and_predict`，获取生成的规则列表并存入本地状态。 | 成功获取到包含 Bundle ID 和 Input Source ID 的规则列表。 |
 
 ### 4.4 菜单栏应用弹窗界面 (Tray Window)
 *参考: Screenshot 12_247*
