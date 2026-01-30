@@ -89,48 +89,48 @@ Contributions for improving the dashboard, enhancing customizability, and adding
 
 ---
 
-## LLM 环境变量配置
+## LLM Environment Variable Configuration
 
-本项目使用独立环境变量文件管理 LLM 配置，避免将敏感信息写入代码或提交到仓库。
+This project uses an independent environment variable file to manage LLM configuration, avoiding writing sensitive information into code or committing it to the repository.
 
-### 1) 配置文件与命名
-*   实际配置文件：`.env.llm`
-*   模板文件：`.env.llm.example`
-*   格式：标准 `KEY=VALUE`，支持 `#` 注释
+### 1) Configuration File & Naming
+*   Actual Config File: `.env.llm`
+*   Template File: `.env.llm.example`
+*   Format: Standard `KEY=VALUE`, supports `#` comments
 
-### 2) 配置项说明
-| Key | 类型 | 必填 | 说明 | 示例 |
+### 2) Configuration Items
+| Key | Type | Required | Description | Example |
 | :--- | :--- | :--- | :--- | :--- |
-| `LLM_API_KEY` | string | 是 | LLM 服务 API Key | `sk-xxxx` |
-| `LLM_MODEL` | string | 是 | LLM 模型名称 | `gpt-4o-mini` |
-| `LLM_BASE_URL` | string | 是 | LLM 服务基础地址 | `https://api.openai.com/v1` |
+| `LLM_API_KEY` | string | Yes | LLM Service API Key | `sk-xxxx` |
+| `LLM_MODEL` | string | Yes | LLM Model Name | `gpt-4o-mini` |
+| `LLM_BASE_URL` | string | Yes | LLM Service Base URL | `https://api.openai.com/v1` |
 
-### 3) 创建步骤
-1. 新建模板文件 `.env.llm.example`，内容示例：
+### 3) Setup Steps
+1. Create a template file `.env.llm.example` with the following content:
     ```env
     # LLM configuration
     LLM_API_KEY=sk-your-key-here
     LLM_MODEL=gpt-4o-mini
     LLM_BASE_URL=https://api.openai.com/v1
     ```
-2. 复制模板文件为实际配置文件：
+2. Copy the template file to the actual configuration file:
     ```bash
     cp .env.llm.example .env.llm
     ```
-3. 修改 `.env.llm` 中的三个字段。
-4. 确保 `.env.llm` 不提交到仓库（已在 `.gitignore` 中忽略）。
+3. Modify the three fields in `.env.llm`.
+4. Ensure `.env.llm` is not committed to the repository (already ignored in `.gitignore`).
 
-### 4) 使用方式（Rust 侧）
-*   应用启动时读取 `.env.llm`，将配置映射到 `LLMConfig`。
-*   读取失败时返回明确错误提示，引导用户完成配置。
-*   读取方式建议：
-    *   已注入环境变量时直接使用 `std::env::var`
-    *   需要从文件加载时使用 `dotenvy`（如后续引入依赖）
+### 4) Usage (Rust Side)
+*   Read `.env.llm` at application startup and map the configuration to `LLMConfig`.
+*   Return a clear error message if reading fails, guiding the user to complete the configuration.
+*   Recommended reading methods:
+    *   Use `std::env::var` directly if environment variables are already injected.
+    *   Use `dotenvy` to load from file if needed (if dependency is introduced later).
 
-### 5) 测试最佳实践
-*   单元测试中通过 `std::env::set_var` 注入模拟配置。
-*   测试结束后恢复或清理环境变量，避免互相污染。
-*   不读取真实 `.env.llm`，使用假 Key 与本地测试地址。
+### 5) Testing Best Practices
+*   Inject mock configuration via `std::env::set_var` in unit tests.
+*   Restore or clean up environment variables after testing to avoid pollution.
+*   Do not read the real `.env.llm`; use fake Keys and local test addresses.
 
 ---
 

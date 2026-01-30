@@ -1,112 +1,112 @@
-# 需求文档 (Requirements Document)
+# Requirements Document
 
-## 1. 核心需求概述
+## 1. Core Requirements Overview
 
-**SmartIME** 旨在解决 macOS 用户在不同应用程序间切换时，频繁手动调整输入法（中文/英文）的痛点。
-通过“零配置”理念，利用 AI 辅助预判应用的输入法偏好，实现应用激活时自动切换到指定输入源，从而提升用户的输入流畅度和工作效率。
+**SmartIME** aims to solve the pain point of frequent manual input method switching (Chinese/English) when users switch between different applications on macOS.
+Through a "Zero Configuration" concept, it uses AI to assist in predicting the input method preference of applications, achieving automatic switching to the specified input source when an application is activated, thereby improving user input fluency and work efficiency.
 
-**核心价值**:
-*   **自动化**: 消除手动切换输入法的操作冗余。
-*   **智能化**: 利用 AI 减少用户初次设置的繁琐步骤。
-*   **无感体验**: 切换过程快速、静默，不干扰用户视线。
+**Core Value**:
+*   **Automation**: Eliminates redundant operations of manual input method switching.
+*   **Intelligence**: Uses AI to reduce the tedious steps of initial user setup.
+*   **Seamless Experience**: Switching process is fast, silent, and does not interfere with the user's line of sight.
 
-## 2. 用户流程 (User Flows)
+## 2. User Flows
 
-### 2.1 首次启动与初始化流程 (Onboarding)
+### 2.1 First Launch & Initialization Flow (Onboarding)
 
 ```mermaid
 graph TD
-    A[用户启动 SmartIME] --> B{检查系统权限}
-    B -- 无权限 --> C[显示引导页: 请求辅助功能/输入监控权限]
-    C --> D[用户在系统设置中授权]
+    A[User Starts SmartIME] --> B{Check System Permissions}
+    B -- No Permission --> C[Show Guide Page: Request Accessibility/Input Monitoring Permission]
+    C --> D[User Grants Permission in System Settings]
     D --> B
-    B -- 权限OK --> E{检查本地配置}
-    E -- 已存在 --> F[进入主界面/后台运行]
-    E -- 不存在 --> J[引导用户配置 LLM API]
-    J --> K{校验 API 连通性}
-    K -- 失败 --> J
-    K -- 成功 --> G[扫描已安装应用]
-    G --> L[获取系统当前输入法列表]
-    L --> H[调用 AI 预测输入偏好]
-    H --> I[生成初始配置表]
+    B -- Permission OK --> E{Check Local Config}
+    E -- Exists --> F[Enter Main Interface/Run in Background]
+    E -- Not Exists --> J[Guide User to Configure LLM API]
+    J --> K{Verify API Connectivity}
+    K -- Failed --> J
+    K -- Success --> G[Scan Installed Apps]
+    G --> L[Get System Current Input Method List]
+    L --> H[Call AI to Predict Input Preference]
+    H --> I[Generate Initial Config Table]
     I --> F
 ```
 
-### 2.2 核心功能使用流程：自动切换
+### 2.2 Core Function Usage Flow: Automatic Switching
 
 ```mermaid
 sequenceDiagram
-    participant User as 用户
-    participant OS as macOS 系统
-    participant App as SmartIME (后台)
+    participant User as User
+    participant OS as macOS System
+    participant App as SmartIME (Background)
     
-    User->>OS: 切换前台应用 (例如: 从 VSCode 切到 WeChat)
-    OS->>App: 触发 AppFocusChanged 事件
-    App->>App: 获取当前 App Bundle ID (com.tencent.xinWeChat)
-    App->>App: 查询本地配置表
-    alt 匹配到规则 (WeChat -> 中文)
-        App->>OS: 调用 TISSelectInputSource (切换为中文)
-        OS-->>User: 输入法状态变更
-    else 无规则/默认
-        App->>App: 保持当前状态 或 切换至默认输入法
+    User->>OS: Switch Foreground App (e.g., from VSCode to WeChat)
+    OS->>App: Trigger AppFocusChanged Event
+    App->>App: Get Current App Bundle ID (com.tencent.xinWeChat)
+    App->>App: Query Local Config Table
+    alt Matched Rule (WeChat -> Chinese)
+        App->>OS: Call TISSelectInputSource (Switch to Chinese)
+        OS-->>User: Input Method Status Changed
+    else No Rule/Default
+        App->>App: Keep Current Status or Switch to Default Input Method
     end
 ```
 
-### 2.3 用户手动配置流程
+### 2.3 User Manual Configuration Flow
 
-1.  用户点击菜单栏图标打开主界面。
-2.  界面展示已识别的应用列表及当前设定的输入法（图标表示：🇨🇳 / 🇺🇸）。
-3.  用户点击某个应用的输入法图标进行切换（覆盖 AI 默认设置）。
-4.  配置自动保存并即时生效。
-5.  (新增) 用户可在主界面点击设置图标，重新调整 LLM API 配置。
+1.  User clicks the menu bar icon to open the main interface.
+2.  Interface displays the identified application list and currently set input method (Icon representation: 🇨🇳 / 🇺🇸).
+3.  User clicks the input method icon of an application to switch (Override AI default setting).
+4.  Configuration is automatically saved and takes effect immediately.
+5.  (New) User can click the settings icon in the main interface to readjust LLM API configuration.
 
-## 3. 功能性需求 (Functional Requirements)
+## 3. Functional Requirements
 
-### 3.1 核心功能
-*   **FR-01 应用扫描**: 程序必须能够遍历 `/Applications` 及 `~/Applications` 目录，获取已安装应用的名称和 Bundle ID。
-*   **FR-LLM LLM 配置 (新增)**:
-    *   应用首次启动时，强制要求用户配置 LLM API 信息。
-    *   包含字段：
-        *   **API Key** (必填，掩码显示)
-        *   **Model** (必填，下拉选择，默认推荐 GPT-4o 等)
-        *   **Base URL** (选填，默认为 `https://api.openai.com/v1`)
-    *   必须提供“连接测试”功能，验证配置有效性后方可继续。
-*   **FR-02 AI 智能预测**:
-    *   **前置条件**: 必须先完成 LLM API 配置。
-    *   **输入限制**: 预测结果必须严格基于用户系统当前已安装/启用的输入法列表，不得虚构不存在的输入法 ID。
-    *   **规则来源**: 完全依赖 LLM 进行智能推断，系统不内置任何静态白名单或预定义规则。
-    *   调用 LLM API，根据应用名称/类别预测其输入法偏好。
-*   **FR-03 自动切换**: 
-    *   实时监听 macOS 的 `NSWorkspace` 活动应用变化通知。
-    *   根据配置表，在 100ms 内完成输入法的切换调用。
-*   **FR-04 状态记忆**: 如果用户在某个 App 内手动切换了输入法（通过系统快捷键），系统应选择性记录该次变更（临时覆盖或永久更新规则，需提供选项）。
+### 3.1 Core Functions
+*   **FR-01 App Scanning**: The program must be able to traverse `/Applications` and `~/Applications` directories to get the names and Bundle IDs of installed applications.
+*   **FR-LLM LLM Configuration (New)**:
+    *   On first application launch, forcibly require user to configure LLM API information.
+    *   Fields included:
+        *   **API Key** (Required, masked display)
+        *   **Model** (Required, dropdown selection, default recommendation GPT-4o, etc.)
+        *   **Base URL** (Optional, defaults to `https://api.openai.com/v1`)
+    *   Must provide "Test Connection" function, allowing continuation only after valid configuration verification.
+*   **FR-02 AI Intelligent Prediction**:
+    *   **Precondition**: Must complete LLM API configuration first.
+    *   **Input Constraint**: Prediction results must strictly be based on the user's currently installed/enabled input method list on the system, and must not fabricate non-existent input method IDs.
+    *   **Rule Source**: Completely rely on LLM for intelligent inference, system does not build in any static whitelist or predefined rules.
+    *   Call LLM API to predict input method preference based on application name/category.
+*   **FR-03 Automatic Switching**:
+    *   Real-time monitoring of macOS `NSWorkspace` active application change notifications.
+    *   Complete input method switching call within 100ms based on the configuration table.
+*   **FR-04 State Memory**: If the user manually switches the input method within an App (via system shortcut), the system should selectively record this change (temporary override or permanent rule update, options needed).
 
-### 3.2 界面功能
-*   **FR-05 规则管理**: 
-    *   提供可视化的列表，允许用户搜索应用、添加自定义规则、删除规则。
-    *   **限制**: 用户手动修改规则时，可选的输入法列表必须从系统实时获取，不允许手动输入未知的输入法 ID。
-*   **FR-06 全局开关**: 提供“暂停自动切换”的全局开关。
-*   **FR-07 默认策略**: 允许设置“未匹配应用”的默认行为（保持不变 / 强制英文）。
+### 3.2 Interface Functions
+*   **FR-05 Rule Management**:
+    *   Provide a visual list allowing users to search applications, add custom rules, and delete rules.
+    *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
+*   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
+*   **FR-07 Default Policy**: Allow setting default behavior for "Unmatched Applications" (Keep Unchanged / Force English).
 
-## 4. 非功能性需求 (Non-functional Requirements)
+## 4. Non-functional Requirements
 
-### 4.1 性能要求
-*   **响应速度**: 应用切换检测到输入法切换完成的延迟应低于 200ms，确保用户开始打字时输入法已就绪。
-*   **资源占用**: 后台静默运行时，CPU 占用率应低于 1%，内存占用应低于 50MB。
+### 4.1 Performance Requirements
+*   **Response Speed**: The latency from detecting application switch to completing input method switch should be less than 200ms, ensuring the input method is ready when the user starts typing.
+*   **Resource Usage**: When running silently in the background, CPU usage should be less than 1%, and memory usage should be less than 50MB.
 
-### 4.2 安全性与隐私
-*   **权限最小化**: 仅请求必要的“辅助功能”或“输入监控”权限。
-*   **数据隐私**: 应用列表和输入习惯数据仅存储在本地，除非用户明确同意，否则不上传至云端。
-*   **凭证安全**: API Key 等敏感信息必须加密存储或使用系统 Keychain 存储。
+### 4.2 Security & Privacy
+*   **Permission Minimization**: Only request necessary "Accessibility" or "Input Monitoring" permissions.
+*   **Data Privacy**: Application lists and input habit data are stored locally only and are not uploaded to the cloud unless explicitly agreed by the user.
+*   **Credential Security**: Sensitive information like API Keys must be stored encrypted or using the System Keychain.
 
-### 4.3 兼容性
-*   **操作系统**: 支持 macOS 12.0 (Monterey) 及以上版本。
-*   **架构**: 提供 Apple Silicon (M1/M2/M3) 和 Intel 架构的双重支持 (Universal Binary)。
+### 4.3 Compatibility
+*   **Operating System**: Supports macOS 12.0 (Monterey) and above.
+*   **Architecture**: Provides dual support for Apple Silicon (M1/M2/M3) and Intel architectures (Universal Binary).
 
-### 4.4 可用性
-*   **系统托盘**: 应用应常驻菜单栏，不占用 Dock 栏空间（可配置）。
-*   **开机自启**: 支持配置为登录时自动启动。
-*   **失败处理**: 若 LLM API 连通性校验失败，应明确提示错误原因（如 401 Unauthorized, Network Error）并允许重试。
+### 4.4 Usability
+*   **System Tray**: Application should reside in the menu bar and not occupy Dock space (Configurable).
+*   **Auto-start**: Supports configuration to start automatically at login.
+*   **Failure Handling**: If LLM API connectivity check fails, clear error reasons (such as 401 Unauthorized, Network Error) should be prompted and retry allowed.
 
-### 4.5 分发方式
-*   **Homebrew Cask**: 必须支持通过 `brew install --cask <app-name>` 进行安装和更新，以便于开发者群体快速部署。
+### 4.5 Distribution Method
+*   **Homebrew Cask**: Must support installation and update via `brew install --cask <app-name>` to facilitate rapid deployment by the developer community.

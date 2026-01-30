@@ -1,83 +1,83 @@
-# 开发任务分解 (Development Tasks)
+# Development Tasks
 
-本文档基于 `REQUIREMENTS.md` (需求文档)、`DESIGN_DOC.md` (设计文档) 和 `TECHNICAL_SPEC.md` (技术规格说明书) 生成，旨在指导 SmartIME 项目的开发流程。
+This document is generated based on `REQUIREMENTS.md` (Requirements Document), `DESIGN_DOC.md` (Design Document), and `TECHNICAL_SPEC.md` (Technical Specification), aiming to guide the development process of the SmartIME project.
 
-## 1. 项目初始化与基础设施 (Infrastructure)
+## 1. Project Initialization & Infrastructure
 
-| 任务 ID      | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 |:-----------| :--- | :--- | :--- | :--- |
-| **INF-01** | **项目脚手架搭建** | - | 使用 `nomandhoni-cs/tauri-nextjs-shadcn-boilerplate` 初始化项目。**必须使用** `rsync --ignore-existing` 策略，以确保保留项目现有的所有文件（如 `.figma`, `.idea`, `.trae`, `LICENSE`, `.gitignore`, `tray-icon.svg` 等）不被覆盖。仅排除模板的 `.git` 目录。更新元数据信息。 | 1. 项目成功运行 `bun tauri dev`。<br>2. 目录结构符合 TECHNICAL_SPEC 定义。<br>3. **所有现有文件完整保留**（特别是 IDE 配置和设计资源）。<br>4. 项目名称、Bundle ID 等元数据已更新。 |
-| **INF-02** | **前端基础依赖安装** | INF-01 | 安装 `lucide-react`, `framer-motion`, `clsx`, `tailwind-merge` 等 UI 依赖。 | `package.json` 中包含指定依赖，且前端可正常 import 使用。 |
-| **INF-03** | **Rust 依赖配置** | INF-01 | 在 `Cargo.toml` 中添加 `reqwest`, `tauri-plugin-store` (或类似持久化库), `cocoa`, `objc` 等依赖。 | `cargo build` 成功编译。 |
+| **INF-01** | **Project Scaffolding Setup** | - | Initialize project using `nomandhoni-cs/tauri-nextjs-shadcn-boilerplate`. **Must use** `rsync --ignore-existing` strategy to ensure all existing files in the project (such as `.figma`, `.idea`, `.trae`, `LICENSE`, `.gitignore`, `tray-icon.svg`, etc.) are preserved and not overwritten. Only exclude the template's `.git` directory. Update metadata information. | 1. Project successfully runs `bun tauri dev`.<br>2. Directory structure complies with TECHNICAL_SPEC definition.<br>3. **All existing files are preserved intact** (especially IDE configurations and design resources).<br>4. Metadata such as project name, Bundle ID, etc., are updated. |
+| **INF-02** | **Frontend Basic Dependencies Installation** | INF-01 | Install UI dependencies such as `lucide-react`, `framer-motion`, `clsx`, `tailwind-merge`. | `package.json` contains specified dependencies, and frontend can import and use them normally. |
+| **INF-03** | **Rust Dependencies Configuration** | INF-01 | Add dependencies like `reqwest`, `tauri-plugin-store` (or similar persistence library), `cocoa`, `objc` in `Cargo.toml`. | `cargo build` compiles successfully. |
 
-## 2. 核心组件与共享模块 (Shared Components)
+## 2. Core Components & Shared Modules
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **UI-01** | **基础 UI 组件库** | INF-03 | 基于 Shadcn/ui 封装或直接使用 Button, Input, Select, Dialog, Card, Table 等组件。 | 组件样式符合 Figma 设计规范（圆角、阴影、配色）。 |
-| **UI-02** | **布局组件开发** | UI-01 | 开发 `Sidebar`, `Header`, `OnboardingLayout` 等通用布局组件。 | 布局在不同窗口尺寸下表现正常。 |
-| **UI-03** | **动画组件封装** | INF-03 | 使用 Framer Motion 封装通用的 `FadeIn`, `SlideUp` 等动画 Wrapper。 | 页面切换和元素显示有平滑过渡效果。 |
+| **UI-01** | **Basic UI Component Library** | INF-03 | Encapsulate or directly use components like Button, Input, Select, Dialog, Card, Table based on Shadcn/ui. | Component styles comply with Figma design specifications (border radius, shadows, color scheme). |
+| **UI-02** | **Layout Component Development** | UI-01 | Develop common layout components like `Sidebar`, `Header`, `OnboardingLayout`. | Layout behaves normally under different window sizes. |
+| **UI-03** | **Animation Component Encapsulation** | INF-03 | Encapsulate common `FadeIn`, `SlideUp` animation wrappers using Framer Motion. | Page transitions and element displays have smooth transition effects. |
 
-## 3. 后端核心逻辑 (Rust Backend)
+## 3. Backend Core Logic (Rust Backend)
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **BE-01** | **输入法管理模块** | INF-04 | 实现 `input_source.rs`：获取系统输入法列表 (`TISCreateInputSourceList`) 和切换输入法 (`TISSelectInputSource`)。 | 1. 能正确列出当前系统所有启用的输入法 ID。<br>2. 能通过 ID 成功切换输入法。 |
-| **BE-02** | **应用监听模块** | INF-04 | 实现 `observer.rs`：监听 `NSWorkspaceDidActivateApplicationNotification`。 | 切换前台应用时，控制台能实时打印新应用的 Bundle ID。 |
-| **BE-03** | **LLM 客户端模块** | INF-04 | 实现 `llm.rs`：封装 Reqwest 请求，支持 OpenAI 格式的 Chat Completion API。 | 能发送测试请求并正确解析返回的 JSON。 |
-| **BE-04** | **系统应用扫描模块** | INF-03 | 实现 `system_apps.rs`：使用 `walkdir` 和 `plist` 扫描系统应用。 | 能正确遍历 `/Applications` 并解析出应用的 Bundle ID 和名称。 |
-| **BE-05** | **配置持久化模块** | INF-04 | 实现配置的读写逻辑（LLM 配置、App 规则表），确保数据安全存储。 | 重启应用后，配置数据不丢失；API Key 不明文显示。 |
-| **BE-06** | **Tauri 命令注册** | BE-01~05 | 注册 `get_installed_apps`, `save_llm_config`, `scan_and_predict` 等 IPC 命令。 | 前端能成功调用这些命令并获取预期返回值。 |
+| **BE-01** | **Input Method Management Module** | INF-04 | Implement `input_source.rs`: Get system input method list (`TISCreateInputSourceList`) and switch input method (`TISSelectInputSource`). | 1. Can correctly list all currently enabled system input method IDs.<br>2. Can successfully switch input method via ID. |
+| **BE-02** | **App Observer Module** | INF-04 | Implement `observer.rs`: Listen for `NSWorkspaceDidActivateApplicationNotification`. | When switching foreground apps, console can print the new app's Bundle ID in real-time. |
+| **BE-03** | **LLM Client Module** | INF-04 | Implement `llm.rs`: Encapsulate Reqwest requests, support OpenAI format Chat Completion API. | Can send test requests and correctly parse returned JSON. |
+| **BE-04** | **System App Scanning Module** | INF-03 | Implement `system_apps.rs`: Scan system apps using `walkdir` and `plist`. | Can correctly traverse `/Applications` and parse out app Bundle IDs and names. |
+| **BE-05** | **Configuration Persistence Module** | INF-04 | Implement configuration read/write logic (LLM config, App rule table), ensuring data is stored securely. | After restarting the app, configuration data is not lost; API Key is not shown in plain text. |
+| **BE-06** | **Tauri Command Registration** | BE-01~05 | Register IPC commands like `get_installed_apps`, `save_llm_config`, `scan_and_predict`. | Frontend can successfully call these commands and get expected return values. |
 
-## 4. 界面模块开发 (Frontend Features)
+## 4. Frontend Features Development
 
-### 4.1 首次安装权限检查界面 (Onboarding Step 1)
-*参考: Screenshot 12_294*
+### 4.1 First Launch Permission Check Interface (Onboarding Step 1)
+*Reference: Screenshot 12_294*
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-ONB-01** | **权限检查 UI 实现** | UI-02 | 实现权限授予引导页，包含图标、说明文案和“设置 > 隐私...”路径指引。 | 界面还原度高，适配 Light/Dark 模式。 |
-| **FE-ONB-02** | **权限检测逻辑** | BE-06 | 调用后端 `check_permissions` 命令，点击“我已开启”时复查权限状态。 | 权限未开启时提示重试；开启后自动跳转下一步。 |
+| **FE-ONB-01** | **Permission Check UI Implementation** | UI-02 | Implement permission grant guide page, including icons, explanatory text, and "Settings > Privacy..." path guidance. | High interface fidelity, adapts to Light/Dark mode. |
+| **FE-ONB-02** | **Permission Detection Logic** | BE-06 | Call backend `check_permissions` command, recheck permission status when clicking "I have enabled". | Prompt retry when permission not enabled; auto jump to next step after enabled. |
 
-### 4.2 LLM 设置界面 (Onboarding Step 2 / Settings Tab)
-*参考: Figma LLM Settings*
+### 4.2 LLM Settings Interface (Onboarding Step 2 / Settings Tab)
+*Reference: Figma LLM Settings*
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-LLM-01** | **LLM 表单开发** | UI-01 | 实现 API Key (带显隐切换)、Model (下拉选择)、Base URL 表单。 | 表单验证逻辑正确（必填项检查）。 |
-| **FE-LLM-02** | **连接测试逻辑** | BE-03 | 点击“测试连接”调用后端接口，处理 Loading/Success/Error 状态。 | 连接成功显示绿色提示；失败显示具体错误信息。 |
+| **FE-LLM-01** | **LLM Form Development** | UI-01 | Implement API Key (with show/hide toggle), Model (dropdown select), Base URL form. | Form validation logic is correct (required fields check). |
+| **FE-LLM-02** | **Connection Test Logic** | BE-03 | Click "Test Connection" to call backend interface, handle Loading/Success/Error states. | Show green prompt on connection success; show specific error message on failure. |
 
-### 4.3 首次扫描与规则生成界面 (Onboarding Step 3)
-*参考: Screenshot 12_47*
+### 4.3 First Scan & Rule Generation Interface (Onboarding Step 3)
+*Reference: Screenshot 12_47*
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-SCAN-01** | **扫描进度 UI** | UI-01 | 实现进度条动画和状态文字（扫描中 -> 分析中 -> 生成完毕）。 | 动画流畅，进度反馈真实。 |
-| **FE-SCAN-02** | **预测流程集成** | BE-06 | 调用 `scan_and_predict`，获取生成的规则列表并存入本地状态。 | 成功获取到包含 Bundle ID 和 Input Source ID 的规则列表。 |
+| **FE-SCAN-01** | **Scan Progress UI** | UI-01 | Implement progress bar animation and status text (Scanning -> Analyzing -> Generated). | Smooth animation, real progress feedback. |
+| **FE-SCAN-02** | **Prediction Flow Integration** | BE-06 | Call `scan_and_predict`, get generated rule list and store in local state. | Successfully obtain rule list containing Bundle ID and Input Source ID. |
 
-### 4.4 菜单栏应用弹窗界面 (Tray Window)
-*参考: Screenshot 12_247*
+### 4.4 Menu Bar App Popup Interface (Tray Window)
+*Reference: Screenshot 12_247*
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-TRAY-01** | **托盘窗口 UI** | UI-01 | 实现紧凑的卡片布局，显示当前 App 图标、名称、AI 模式状态。 | 界面尺寸固定，布局紧凑美观。 |
-| **FE-TRAY-02** | **实时状态同步** | BE-02 | 监听 `app_focused` 事件，实时更新当前 App 信息和输入法状态。 | 切换 App 时，托盘窗口内容即时刷新。 |
-| **FE-TRAY-03** | **快速切换交互** | BE-01 | 实现“中/英”分段控制器，点击后立即调用后端切换输入法并更新规则。 | 点击切换后，系统输入法实际发生改变。 |
+| **FE-TRAY-01** | **Tray Window UI** | UI-01 | Implement compact card layout, displaying current App icon, name, AI mode status. | Interface size fixed, layout compact and aesthetic. |
+| **FE-TRAY-02** | **Real-time Status Sync** | BE-02 | Listen for `app_focused` event, update current App info and input method status in real-time. | When switching Apps, tray window content refreshes instantly. |
+| **FE-TRAY-03** | **Quick Switch Interaction** | BE-01 | Implement "CN/EN" segmented controller, immediately call backend to switch input method and update rules upon click. | System input method actually changes after clicking switch. |
 
-### 4.5 应用主设置界面 (Main Settings)
-*参考: Screenshot 3_262*
+### 4.5 App Main Settings Interface (Main Settings)
+*Reference: Screenshot 3_262*
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-MAIN-01** | **侧边栏导航** | UI-02 | 实现“规则管理”、“LLM 设置”、“常规设置”的切换逻辑。 | 点击导航项正确切换右侧内容区域。 |
-| **FE-MAIN-02** | **规则列表开发** | UI-01 | 实现应用列表 Table，包含图标、名称、输入法 Pill Badge、删除按钮。 | 列表渲染性能良好，支持滚动。 |
-| **FE-MAIN-03** | **搜索与添加** | FE-MAIN-02 | 实现列表搜索过滤功能；“添加应用”按钮逻辑（弹窗选择未配置的 App）。 | 搜索响应迅速；能成功添加新规则。 |
-| **FE-MAIN-04** | **规则修改逻辑** | BE-04 | 用户在列表中修改输入法或删除规则时，调用 `save_config` 同步后端。 | 修改后重启应用，配置依然生效。 |
+| **FE-MAIN-01** | **Sidebar Navigation** | UI-02 | Implement switching logic for "Rule Management", "LLM Settings", "General Settings". | Clicking nav items correctly switches right-side content area. |
+| **FE-MAIN-02** | **Rule List Development** | UI-01 | Implement App list Table, including icon, name, Input Method Pill Badge, delete button. | List rendering performance is good, supports scrolling. |
+| **FE-MAIN-03** | **Search & Add** | FE-MAIN-02 | Implement list search filter function; "Add App" button logic (popup to select unconfigured Apps). | Search responds quickly; can successfully add new rules. |
+| **FE-MAIN-04** | **Rule Modification Logic** | BE-04 | When user modifies input method or deletes rule in list, call `save_config` to sync backend. | Configuration remains effective after restarting app upon modification. |
 
-## 5. 打包与发布 (Distribution)
+## 5. Packaging & Distribution
 
-| 任务 ID | 任务标题 | 依赖 | 描述 | 验收标准 |
+| Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **DIST-01** | **构建脚本配置** | INF-01 | 优化 `package.json` 构建脚本，确保构建流程顺畅。 | `bun tauri build` 能生成最终产物。 |
-| **DIST-02** | **GitHub Actions** | - | 配置 CI/CD 流程，自动构建 Release 版本并上传 Artifacts。 | Push tag 后自动触发构建并发布 Release。 |
-| **DIST-03** | **Homebrew Tap** | DIST-02 | 创建 `homebrew-smartime` 仓库，编写 Cask 脚本。 | 能通过 `brew install --cask smartime` 安装应用。 |
+| **DIST-01** | **Build Script Configuration** | INF-01 | Optimize `package.json` build script to ensure smooth build flow. | `bun tauri build` can generate final artifact. |
+| **DIST-02** | **GitHub Actions** | - | Configure CI/CD flow, automatically build Release version and upload Artifacts. | Automatically trigger build and publish Release after pushing tag. |
+| **DIST-03** | **Homebrew Tap** | DIST-02 | Create `homebrew-smartime` repository, write Cask script. | App can be installed via `brew install --cask smartime`. |
