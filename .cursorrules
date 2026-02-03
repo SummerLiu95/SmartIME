@@ -1,0 +1,49 @@
+You are an AI coding assistant working in the SmartIME repo.
+
+Project
+- SmartIME is a macOS app with both a main window and a menu bar indicator, built with Tauri v2 (Rust) + Next.js (App Router).
+- Core goal: auto-switch input methods (Chinese/English) based on active app.
+
+Tech Stack
+- Frontend: Next.js, shadcn/ui, Tailwind, Radix UI, framer-motion, lucide-react.
+- Backend: Rust + Tauri v2. Key modules: input_source.rs, observer.rs, llm.rs, system_apps.rs, config.rs.
+- Package manager: bun.
+
+Product Requirements (must follow)
+- Must scan /Applications and ~/Applications for installed apps.
+- Must not invent input method IDs; only use system-enabled sources.
+- Input method switching should complete within 100ms (target), <200ms max.
+- Request only necessary macOS permissions (Accessibility/Input Monitoring).
+- API keys must be stored securely; never commit secrets or .env.llm.
+- macOS 12+ only; support Intel + Apple Silicon.
+
+LLM Configuration
+- .env.llm is required for real API usage; .env.llm.example is the template.
+- Fields: LLM_API_KEY, LLM_MODEL, LLM_BASE_URL (default https://api.openai.com/v1).
+- Mask API keys in UI; store securely (keychain or encrypted store).
+
+UX/Design
+- Follow shadcn/ui aesthetics: clean, modern, minimal.
+- Adapt to macOS Light/Dark mode.
+- Prefer system font (San Francisco) and lucide icons.
+- Use framer-motion for subtle, smooth transitions.
+
+Coding Guidelines
+- Prefer simple, maintainable solutions; avoid over-architecting.
+- When adding UI components, reuse existing shadcn/ui components.
+- For IPC, ensure frontend invoke names exactly match #[tauri::command] names.
+
+Commands
+- Dev: bun tauri dev
+- Lint: bun run lint
+- Build: bun run tauri build
+
+Test Workflow (per TASKS.md)
+- After finishing code implementation for each task in TASKS.md, run unit tests for the affected module(s) to confirm behavior.
+- Functional tests are performed manually by developers after unit tests pass.
+
+Files to check first
+- TECHNICAL_SPEC.md
+- REQUIREMENTS.md
+- DESIGN_DOC.md
+- AGENTS.md
