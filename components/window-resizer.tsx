@@ -55,28 +55,14 @@ export function WindowResizer() {
       }
     };
 
-    const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => updateWindowSize());
+    const raf = requestAnimationFrame(() => {
+      updateWindowSize();
+      // One additional pass to catch late layout (fonts, images, async data).
+      setTimeout(updateWindowSize, 120);
     });
 
-    observer.observe(document.body);
-    if (document.body.firstElementChild) {
-      observer.observe(document.body.firstElementChild);
-    }
-    observer.observe(document.documentElement);
-
-    updateWindowSize();
-
-    const timers = [
-      setTimeout(updateWindowSize, 50),
-      setTimeout(updateWindowSize, 150),
-      setTimeout(updateWindowSize, 300),
-      setTimeout(updateWindowSize, 500)
-    ];
-
     return () => {
-      observer.disconnect();
-      timers.forEach(clearTimeout);
+      cancelAnimationFrame(raf);
     };
   }, [pathname]);
 
