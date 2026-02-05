@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 export type InputSource = {
   id: string;
   name: string;
-  is_enabled: boolean;
+  category: string;
 };
 
 export type AppRule = {
@@ -11,6 +11,13 @@ export type AppRule = {
   app_name: string;
   preferred_input: string;
   is_ai_generated: boolean;
+};
+
+export type AppConfig = {
+  version: number;
+  global_switch: boolean;
+  default_input: "en" | "zh" | "keep";
+  rules: AppRule[];
 };
 
 export type LLMConfig = {
@@ -44,8 +51,15 @@ export const API = {
   /**
    * 扫描并预测应用规则
    */
-  scanAndPredict: async (): Promise<AppRule[]> => {
-    return invoke('cmd_scan_and_predict');
+  scanAndPredict: async (inputSources: InputSource[]): Promise<AppRule[]> => {
+    return invoke('cmd_scan_and_predict', { inputSources });
+  },
+
+  /**
+   * 保存配置
+   */
+  saveConfig: async (config: AppConfig): Promise<void> => {
+    return invoke('cmd_save_config', { config });
   },
 
   /**

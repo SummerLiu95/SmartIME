@@ -1,7 +1,8 @@
 use crate::config::{AppConfig, AppRule, AppState};
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::input_source::{get_system_input_sources, select_input_source, InputSource};
 use crate::llm::LLMConfig;
+use crate::system_apps::SystemApp;
 use tauri::State;
 
 // Input Source Commands
@@ -57,26 +58,26 @@ pub fn cmd_get_llm_config(state: State<'_, AppState>) -> Result<LLMConfig> {
 }
 
 #[tauri::command]
-pub async fn cmd_scan_and_predict(state: State<'_, AppState>) -> Result<Vec<AppRule>> {
-    // 1. 获取系统已安装的应用
+pub async fn cmd_scan_and_predict(
+    input_sources: Vec<InputSource>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AppRule>> {
     let installed_apps = crate::system_apps::get_installed_apps()?;
-    
-    // 限制扫描数量用于测试或避免过多请求 (可选，这里先不限制，或者限制前N个)
-    // 实际生产可能需要分批处理或者用户选择
-    // 为了演示，我们只取前 5 个非系统应用（根据 bundle id 简单过滤）
-    // 或者全部预测。考虑到 LLM 成本和时间，这里暂时全部预测，但请注意这可能会很慢。
-    // 更好的做法是只预测常用应用，或者让用户勾选。
-    // 这里我们简单过滤掉 com.apple. 开头的应用，减少数量
-    let target_apps: Vec<_> = installed_apps.into_iter()
-        .filter(|app| !app.bundle_id.starts_with("com.apple."))
-        .take(10) // 暂时限制 10 个，避免等待太久
-        .collect();
+    let target_apps = filter_target_apps(installed_apps);
 
-    let input_sources = get_system_input_sources()?;
+    if input_sources.is_empty() {
+        return Err(AppError::InputSource("No available input sources".to_string()));
+    }
     
-    // 获取 LLM Client 的克隆，避免持有锁跨越 await
     let llm_client = {
         let guard = state.llm.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+        let config = guard.get_config();
+        if config.api_key.trim().is_empty()
+            || config.model.trim().is_empty()
+            || config.base_url.trim().is_empty()
+        {
+            return Err(AppError::Llm("LLM configuration is incomplete".to_string()));
+        }
         guard.clone()
     };
     
@@ -101,6 +102,12 @@ pub async fn cmd_scan_and_predict(state: State<'_, AppState>) -> Result<Vec<AppR
     Ok(rules)
 }
 
+fn filter_target_apps(apps: Vec<SystemApp>) -> Vec<SystemApp> {
+    apps.into_iter()
+        .filter(|app| !app.bundle_id.starts_with("com.apple."))
+        .collect()
+}
+
 #[tauri::command]
 pub fn cmd_check_permissions() -> bool {
     // 简单检查是否能获取到输入法列表（通常需要权限）
@@ -114,4 +121,30 @@ pub fn cmd_open_system_settings() {
     let _ = std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_filter_target_apps() {
+        let apps = vec![
+            SystemApp {
+                name: "Safari".to_string(),
+                bundle_id: "com.apple.Safari".to_string(),
+                path: PathBuf::from("/Applications/Safari.app"),
+            },
+            SystemApp {
+                name: "Chrome".to_string(),
+                bundle_id: "com.google.Chrome".to_string(),
+                path: PathBuf::from("/Applications/Google Chrome.app"),
+            },
+        ];
+
+        let filtered = filter_target_apps(apps);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].bundle_id, "com.google.Chrome");
+    }
 }

@@ -39,9 +39,10 @@ fn parse_app_plist(app_path: &Path) -> Option<SystemApp> {
         return None;
     }
 
-    let name = app_plist.display_name
+    let name = app_plist
+        .display_name
         .or(app_plist.bundle_name)
-        .unwrap_or_else(|| app_path.file_stem().unwrap().to_string_lossy().to_string());
+        .or_else(|| app_path.file_stem().map(|stem| stem.to_string_lossy().to_string()))?;
 
     Some(SystemApp {
         name,
