@@ -29,6 +29,7 @@
 # Editor
 .idea
 .trae
+.codex
 
 # debug
 npm-debug.log*

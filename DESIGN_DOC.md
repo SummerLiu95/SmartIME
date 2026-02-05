@@ -33,12 +33,26 @@ Small window pops up when clicking the menu bar icon.
     *   **Rules**: Rule management list.
     *   **LLM Settings (New)**: Reuse form from Onboarding, allowing user to update API configuration at any time.
     *   **General**: Auto-start at login, tray icon style, etc.
+*   **Left Sidebar**:
+    *   App icon + name at the top.
+    *   Navigation list (Rules / General).
+    *   **Status Card** at bottom with label "STATUS" and text "AI 预测已启用".
 *   **App List (Rules Tab)**:
     *   Use `Table` or `Card` list to display all configured apps.
     *   **Columns**: App Icon | App Name | Preferred Input Method (Dropdown: Only display system enabled input methods) | Action (Delete).
-    *   **Search Bar**: Search box at the top to quickly filter apps.
+    *   **Top Bar**:
+        *   **Search Bar** (placeholder: "搜索应用...") to quickly filter apps.
+        *   **Rescan Button** on the right ("重新扫描") to trigger re-scan + AI prediction.
+        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning.
     *   *Animation*: Addition/Deletion of list items should trigger **Layout Animation** (like `layout` prop), making surrounding elements rearrange smoothly instead of instant jumping.
 *   **Footer**: Status bar, displaying "AI Prediction Enabled" or "Rules Synced".
+*   **General Settings Tab**:
+    *   Title "常规设置" with subtitle "管理应用的基础运行行为。".
+    *   Three **setting cards** (72px height) with toggle switches:
+        1. **登录时自动启动** (desc: 在您进入系统时开启 SmartIME) — default ON.
+        2. **在菜单栏显示状态** (desc: 显示当前 IME 状态图标) — default ON.
+        3. **隐藏 Dock 图标** (desc: 仅在菜单栏运行（推荐）) — default OFF.
+    *   Toggle styling: blue pill when ON, gray pill when OFF.
 
 ### 1.3 Responsive Design
-Since it is mainly a desktop tool application, the interface design mainly targets fixed-width windows (e.g., 800x600 for main settings page, 300x400 for tray page), but components should support flexible layout to adapt to stretching.
+Since it is mainly a desktop tool application, the interface design mainly targets fixed-width windows (e.g., **896x600** for main settings page, 300x400 for tray page), but components should support flexible layout to adapt to stretching.

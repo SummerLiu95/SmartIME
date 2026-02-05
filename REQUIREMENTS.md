@@ -102,6 +102,12 @@ sequenceDiagram
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Default Policy**: Allow setting default behavior for "Unmatched Applications" (Keep Unchanged / Force English).
+*   **FR-08 General Settings**:
+    *   Provide toggles for **Auto-start at login**, **Show menu bar status icon**, and **Hide Dock icon**.
+    *   Changes must persist across restarts and take effect at the system level.
+*   **FR-09 Manual Rescan**:
+    *   Provide a "重新扫描" action in the Rules view to refresh installed app list and re-run AI prediction.
+    *   Must show a loading state and prevent duplicate triggers while scanning.
 
 ## 4. Non-functional Requirements
 

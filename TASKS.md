@@ -28,6 +28,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **BE-04** | **System App Scanning Module** | INF-03 | Implement `system_apps.rs`: Scan system apps using `walkdir` and `plist`. | Can correctly traverse `/Applications` and parse out app Bundle IDs and names. |
 | **BE-05** | **Configuration Persistence Module** | INF-03 | Implement configuration read/write logic (LLM config, App rule table), ensuring data is stored securely. | After restarting the app, configuration data is not lost; API Key is not shown in plain text. |
 | **BE-06** | **Tauri Command Registration** | BE-01~05 | Register IPC commands like `get_installed_apps`, `save_llm_config`, `scan_and_predict`. | Frontend can successfully call these commands and get expected return values. |
+| **BE-07** | **General Settings System Integration** | BE-05 | Implement OS-level integrations for auto-start, menu bar status visibility, and Dock icon hiding; persist in config. | Toggling settings updates system behavior and persists across restarts. |
 
 ## 4. Frontend Features Development
 
@@ -63,15 +64,18 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-TRAY-01** | **Tray Window UI** | UI-01 | Implement compact card layout, displaying current App icon, name, AI mode status. | Interface size fixed, layout compact and aesthetic. |
 | **FE-TRAY-02** | **Real-time Status Sync** | BE-02 | Listen for `app_focused` event, update current App info and input method status in real-time. | When switching Apps, tray window content refreshes instantly. |
 
-### 4.5 App Main Settings Interface (Main Settings)
-*Reference: [Main Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-84&m=dev)*
+### 4.5 App Settings Interface
+*Reference: [Main Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-84&m=dev), [General Settings Panel](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-690), [Rescan Loading State](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-823)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
 | **FE-MAIN-01** | **Sidebar Navigation** | UI-02 | Implement switching logic for "Rule Management", "LLM Settings", "General Settings". | Clicking nav items correctly switches right-side content area. |
 | **FE-MAIN-02** | **Rule List Development** | UI-01 | Implement App list Table, including icon, name, Input Method Pill Badge, delete button. | List rendering performance is good, supports scrolling. |
-| **FE-MAIN-03** | **Search & Add** | FE-MAIN-02 | Implement list search filter function; "Add App" button logic (popup to select unconfigured Apps). | Search responds quickly; can successfully add new rules. |
+| **FE-MAIN-03** | **Search & Actions** | FE-MAIN-02 | Implement top bar search input, "重新扫描" action to trigger scan + AI prediction, and (if required) add-rule flow for unconfigured apps. | Search responds quickly; rescan triggers backend and refreshes list; manual add flow can create a new rule. |
 | **FE-MAIN-04** | **Rule Modification Logic** | BE-04 | When user modifies input method or deletes rule in list, call `save_config` to sync backend. | Configuration remains effective after restarting app upon modification. |
+| **FE-MAIN-05** | **General Settings UI** | UI-02 | Implement General Settings view with three setting cards and toggle switches. | Layout and toggle styles match Figma; default states reflect config. |
+| **FE-MAIN-06** | **General Settings Persistence** | BE-07 | Bind toggles to config state and persist changes via `save_config`. | Toggling settings updates config and survives restart. |
+| **FE-MAIN-07** | **Rescan Loading State** | FE-MAIN-03 | Add loading/disabled state for rescan button (spinner + opacity). | While scanning, button is disabled and shows loading feedback; re-enabled after completion. |
 
 ## 5. Packaging & Distribution
 

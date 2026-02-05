@@ -205,8 +205,14 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Rust side reads LLM configuration, constructs Prompt (including system input method ID list as Enum constraint).
     *   Rust side sends HTTP request to LLM Provider.
     *   Parses JSON response, generates `AppRule` list and returns to frontend.
-    
-3.  **App Monitoring Loop (Rust Side)**:
+
+3.  **Manual Rescan (Main Settings > Rules)**:
+    *   User clicks "重新扫描" in the top-right of the Rules view.
+    *   Frontend sets `isRescanning = true` (button disabled, spinner shown).
+    *   Calls `scan_and_predict`, then merges/overwrites rules per product decision.
+    *   Persist updated `AppConfig` via `save_config`, then clears loading state.
+
+4.  **App Monitoring Loop (Rust Side)**:
     *   `Observer Thread`: Uses `NSWorkspace` to listen for notifications.
     *   **Trigger**: `NSWorkspaceDidActivateApplicationNotification`.
     *   **Action**:
@@ -215,7 +221,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
         3. Match rule -> Call `TISSelectInputSource`.
         4. Emit `app_focused` event to frontend (if frontend window is open).
 
-4.  **Configuration Sync**:
+5.  **Configuration Sync**:
     *   Configuration file stored in `$APP_DATA/config.json`.
     *   At application startup, Rust backend reads JSON and loads it into `Mutex<Config>` in memory to ensure read speed.
     *   Frontend modifies configuration -> Calls `save_config` -> Rust updates memory & asynchronously writes to disk.
@@ -231,12 +237,22 @@ interface LLMConfig {
 }
 ```
 
+#### GeneralSettings
+```typescript
+interface GeneralSettings {
+  autoStart: boolean; // Start on login
+  showMenuBarStatus: boolean; // Show IME status icon in menu bar
+  hideDockIcon: boolean; // Run as menu bar only
+}
+```
+
 #### AppConfig (TypeScript Interface)
 ```typescript
 interface AppConfig {
   version: number;
   globalSwitch: boolean; // Master switch
   defaultInput: "en" | "zh" | "keep"; // Default policy
+  general: GeneralSettings;
   rules: AppRule[];
 }
 
@@ -261,8 +277,14 @@ interface AppRule {
 
 ### 4.5 Directory & State Management
 
-*   **State Management**: Use `Zustand` to manage frontend state (current app list, loading state, search keywords).
+*   **State Management**: Use `Zustand` to manage frontend state (current app list, search keywords, rescan loading state, general settings toggles).
 *   **Persistence**: Core configuration persistence is handled by Rust backend, frontend is only responsible for rendering and sending modification commands.
+
+### 4.6 General Settings Integration (macOS)
+
+*   **Auto-start**: Use macOS login item mechanism (or a Tauri plugin if adopted) to register/unregister SmartIME at login.
+*   **Menu Bar Status**: Toggle visibility of the status icon in the tray window.
+*   **Hide Dock Icon**: Switch app activation policy to accessory-only; change may require app relaunch depending on implementation.
 
 ## 5. Build & Deployment
 
