@@ -73,7 +73,7 @@ sequenceDiagram
 2.  Interface displays the identified application list and currently set input method (Icon representation: 🇨🇳 / 🇺🇸).
 3.  User clicks the input method icon of an application to switch (Override AI default setting).
 4.  Configuration is automatically saved and takes effect immediately.
-5.  (New) User can click the settings icon in the main interface to readjust LLM API configuration.
+5.  Settings in the main interface are for rule management and general system behavior only (no LLM configuration here).
 
 ## 3. Functional Requirements
 

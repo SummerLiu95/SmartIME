@@ -198,6 +198,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Frontend checks if `get_llm_config` is empty.
     *   If empty -> Route to Onboarding page.
     *   If not empty -> Route to Home page/Background mode.
+    *   LLM configuration is only handled in onboarding; the main settings panel has no LLM settings tab.
 
 2.  **AI Prediction Flow**:
     *   Frontend calls `scan_and_predict`.

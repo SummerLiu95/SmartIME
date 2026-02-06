@@ -31,7 +31,6 @@ Small window pops up when clicking the menu bar icon.
 #### C. Main Settings Panel (Main Window)
 *   **Tabs**:
     *   **Rules**: Rule management list.
-    *   **LLM Settings (New)**: Reuse form from Onboarding, allowing user to update API configuration at any time.
     *   **General**: Auto-start at login, tray icon style, etc.
 *   **Left Sidebar**:
     *   App icon + name at the top.
@@ -55,4 +54,4 @@ Small window pops up when clicking the menu bar icon.
     *   Toggle styling: blue pill when ON, gray pill when OFF.
 
 ### 1.3 Responsive Design
-Since it is mainly a desktop tool application, the interface design mainly targets fixed-width windows (e.g., **896x600** for main settings page, 300x400 for tray page), but components should support flexible layout to adapt to stretching.
+As a macOS desktop application, window size should **adapt to page content** rather than fixed dimensions. Layouts should be flexible and resilient to content growth, while keeping a compact, native feel.

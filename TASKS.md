@@ -40,7 +40,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-ONB-01** | **Permission Check UI Implementation** | UI-02 | Implement permission grant guide page, including icons, explanatory text, and "Settings > Privacy..." path guidance. | High interface fidelity, adapts to Light/Dark mode. |
 | **FE-ONB-02** | **Permission Detection Logic** | BE-06 | Call backend `check_permissions` command, recheck permission status when clicking "I have enabled". | Prompt retry when permission not enabled; auto jump to next step after enabled. |
 
-### 4.2 LLM Settings Interface (Onboarding Step 2 / Settings Tab)
+### 4.2 LLM Settings Interface (Onboarding Step 2 Only)
 *Reference: [LLM Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=47-382&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
@@ -61,7 +61,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-TRAY-01** | **Tray Window UI** | UI-01 | Implement compact card layout, displaying current App icon, name, AI mode status. | Interface size fixed, layout compact and aesthetic. |
+| **FE-TRAY-01** | **Tray Window UI** | UI-01 | Implement compact card layout, displaying current App icon, name, AI mode status. | Window adapts to content; layout remains compact and aesthetic. |
 | **FE-TRAY-02** | **Real-time Status Sync** | BE-02 | Listen for `app_focused` event, update current App info and input method status in real-time. | When switching Apps, tray window content refreshes instantly. |
 
 ### 4.5 App Settings Interface
