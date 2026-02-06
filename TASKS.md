@@ -33,7 +33,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 ## 4. Frontend Features Development
 
 ### 4.1 First Launch Permission Check Interface (Onboarding Step 1)
-*Reference: [Permission Check Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-245&m=dev)*
+*Reference: [Permission Check Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-294&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
@@ -41,7 +41,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-ONB-02** | **Permission Detection Logic** | BE-06 | Call backend `check_permissions` command, recheck permission status when clicking "I have enabled". | Prompt retry when permission not enabled; auto jump to next step after enabled. |
 
 ### 4.2 LLM Settings Interface (Onboarding Step 2 / Settings Tab)
-*Reference: [LLM Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-2)*
+*Reference: [LLM Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=47-382&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
@@ -57,7 +57,7 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-SCAN-02** | **Prediction Flow Integration** | BE-06 | Call `scan_and_predict`, get generated rule list and store in local state. | Successfully obtain rule list containing Bundle ID and Input Source ID. |
 
 ### 4.4 Menu Bar App Popup Interface (Tray Window)
-*Reference: [Menu Bar App Popup Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-246)*
+*Reference: [Menu Bar App Popup Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=47-336&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
@@ -65,13 +65,13 @@ This document is generated based on `REQUIREMENTS.md` (Requirements Document), `
 | **FE-TRAY-02** | **Real-time Status Sync** | BE-02 | Listen for `app_focused` event, update current App info and input method status in real-time. | When switching Apps, tray window content refreshes instantly. |
 
 ### 4.5 App Settings Interface
-*Reference: [Main Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=12-84&m=dev), [General Settings Panel](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-690), [Rescan Loading State](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-823)*
+*Reference: [Main Settings Interface](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-541&m=dev), [General Settings Panel](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-756&m=dev), [Rescan Loading State](https://www.figma.com/design/VRUhsQxvw3cpybCwvbD7Pt/SmartIME?node-id=60-823&m=dev)*
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- | :--- |
-| **FE-MAIN-01** | **Sidebar Navigation** | UI-02 | Implement switching logic for "Rule Management", "LLM Settings", "General Settings". | Clicking nav items correctly switches right-side content area. |
+| **FE-MAIN-01** | **Sidebar Navigation** | UI-02 | Implement switching logic for "Rule Management", "General Settings". | Clicking nav items correctly switches right-side content area. |
 | **FE-MAIN-02** | **Rule List Development** | UI-01 | Implement App list Table, including icon, name, Input Method Pill Badge, delete button. | List rendering performance is good, supports scrolling. |
-| **FE-MAIN-03** | **Search & Actions** | FE-MAIN-02 | Implement top bar search input, "重新扫描" action to trigger scan + AI prediction, and (if required) add-rule flow for unconfigured apps. | Search responds quickly; rescan triggers backend and refreshes list; manual add flow can create a new rule. |
+| **FE-MAIN-03** | **Search & Actions** | FE-MAIN-02 | Implement top bar search input, "重新扫描" action to trigger scan + AI prediction | Search responds quickly; rescan triggers backend and refreshes list. |
 | **FE-MAIN-04** | **Rule Modification Logic** | BE-04 | When user modifies input method or deletes rule in list, call `save_config` to sync backend. | Configuration remains effective after restarting app upon modification. |
 | **FE-MAIN-05** | **General Settings UI** | UI-02 | Implement General Settings view with three setting cards and toggle switches. | Layout and toggle styles match Figma; default states reflect config. |
 | **FE-MAIN-06** | **General Settings Persistence** | BE-07 | Bind toggles to config state and persist changes via `save_config`. | Toggling settings updates config and survives restart. |
