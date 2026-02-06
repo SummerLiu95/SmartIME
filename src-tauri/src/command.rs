@@ -1,9 +1,10 @@
 use crate::config::{AppConfig, AppRule, AppState};
 use crate::error::{AppError, Result};
+use crate::general_settings;
 use crate::input_source::{get_system_input_sources, select_input_source, InputSource};
 use crate::llm::LLMConfig;
 use crate::system_apps::SystemApp;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 // Input Source Commands
 
@@ -20,8 +21,21 @@ pub fn cmd_select_input_source(id: String) -> Result<()> {
 // Config Commands
 
 #[tauri::command]
-pub fn cmd_save_config(config: AppConfig, state: State<'_, AppState>) -> Result<()> {
-    let mut manager = state.config.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+pub fn cmd_save_config(
+    config: AppConfig,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<()> {
+    let mut manager = state
+        .config
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    let previous = manager.get_config();
+
+    if previous.general != config.general {
+        general_settings::apply_general_settings(&app, &config.general)?;
+    }
+
     manager.set_config(config)
 }
 

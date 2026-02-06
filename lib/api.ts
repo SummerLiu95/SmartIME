@@ -17,6 +17,11 @@ export type AppConfig = {
   version: number;
   global_switch: boolean;
   default_input: "en" | "zh" | "keep";
+  general: {
+    auto_start: boolean;
+    show_menu_bar_status: boolean;
+    hide_dock_icon: boolean;
+  };
   rules: AppRule[];
 };
 

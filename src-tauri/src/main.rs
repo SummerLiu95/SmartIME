@@ -4,6 +4,7 @@
 mod command;
 mod config;
 mod error;
+mod general_settings;
 mod input_source;
 mod llm;
 mod observer;
@@ -19,6 +20,16 @@ fn main() {
         .manage(AppState::new()) // 注入全局状态
         .setup(|app| {
             let handle = app.handle().clone();
+            let state = app.state::<AppState>();
+
+            if let Ok(manager) = state.config.lock() {
+                let config = manager.get_config();
+                if let Err(err) =
+                    general_settings::apply_general_settings(&handle, &config.general)
+                {
+                    eprintln!("Failed to apply general settings on startup: {}", err);
+                }
+            }
             
             // 启动应用监听
             #[cfg(target_os = "macos")]

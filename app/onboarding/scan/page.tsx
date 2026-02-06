@@ -47,6 +47,11 @@ export default function ScanOnboardingPage() {
           version: 1,
           global_switch: true,
           default_input: "keep",
+          general: {
+            auto_start: true,
+            show_menu_bar_status: true,
+            hide_dock_icon: false,
+          },
           rules: generatedRules,
         };
         await API.saveConfig(config);

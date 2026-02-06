@@ -1,4 +1,4 @@
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -13,11 +13,30 @@ pub struct AppRule {
     pub is_ai_generated: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GeneralSettings {
+    pub auto_start: bool,
+    pub show_menu_bar_status: bool,
+    pub hide_dock_icon: bool,
+}
+
+impl Default for GeneralSettings {
+    fn default() -> Self {
+        Self {
+            auto_start: true,
+            show_menu_bar_status: true,
+            hide_dock_icon: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub version: u32,
     pub global_switch: bool,
     pub default_input: String, // "en", "zh", "keep"
+    #[serde(default)]
+    pub general: GeneralSettings,
     pub rules: Vec<AppRule>,
 }
 
@@ -27,6 +46,7 @@ impl Default for AppConfig {
             version: 1,
             global_switch: true,
             default_input: "keep".to_string(),
+            general: GeneralSettings::default(),
             rules: Vec::new(),
         }
     }
@@ -121,5 +141,30 @@ impl AppState {
             config: Mutex::new(ConfigManager::new()),
             llm: Mutex::new(crate::llm::LLMClient::new()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_general_settings_default() {
+        let defaults = GeneralSettings::default();
+        assert!(defaults.auto_start);
+        assert!(defaults.show_menu_bar_status);
+        assert!(!defaults.hide_dock_icon);
+    }
+
+    #[test]
+    fn test_app_config_deserialize_missing_general() {
+        let raw = r#"{
+            "version": 1,
+            "global_switch": true,
+            "default_input": "keep",
+            "rules": []
+        }"#;
+        let parsed: AppConfig = serde_json::from_str(raw).expect("deserialize AppConfig");
+        assert_eq!(parsed.general, GeneralSettings::default());
     }
 }
