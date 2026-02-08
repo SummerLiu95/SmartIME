@@ -21,7 +21,7 @@ graph TD
     C --> D[User Grants Permission in System Settings]
     D --> B
     B -- Permission OK --> E{Check Local Config}
-    E -- Exists --> F[Enter Main Interface/Run in Background]
+    E -- Exists --> F[Open Main Settings Window]
     E -- Not Exists --> J[Guide User to Configure LLM API]
     J --> K{Verify API Connectivity}
     K -- Failed --> J
@@ -40,11 +40,12 @@ graph TD
     B -- Config Missing --> C["Jump to First Launch Flow (2.1)"]
     B -- Config Exists --> D{Check Permissions}
     D -- Revoked --> E[Prompt to Re-enable Permissions]
-    D -- Valid --> F[Initialize Background Services]
-    F --> G["Load Saved Rules & LLM Config"]
-    G --> H[Register System Tray Icon]
-    H --> I[Start Input Source Observer]
-    I --> J["Ready (Resident in Background)"]
+    D -- Valid --> F[Open Main Settings Window]
+    F --> G["Initialize Background Services"]
+    G --> H["Load Saved Rules & LLM Config"]
+    H --> I[Register System Tray Icon]
+    I --> J[Start Input Source Observer]
+    J --> K["Ready (Main Window Open)"]
 ```
 
 ### 2.3 Core Function Usage Flow: Automatic Switching
@@ -67,13 +68,15 @@ sequenceDiagram
     end
 ```
 
-### 2.3 User Manual Configuration Flow
+### 2.4 User Manual Configuration Flow
 
-1.  User clicks the menu bar icon to open the main interface.
+This flow represents a **returning user** (not the first launch). All required permissions and LLM configuration are already completed.
+
+1.  User opens the app and the main settings window is shown directly.
 2.  Interface displays the identified application list and currently set input method (Icon representation: 🇨🇳 / 🇺🇸).
 3.  User clicks the input method icon of an application to switch (Override AI default setting).
 4.  Configuration is automatically saved and takes effect immediately.
-5.  Settings in the main interface are for rule management and general system behavior only (no LLM configuration here).
+5.  Settings in the main interface are for rule management and general system behavior only.
 
 ## 3. Functional Requirements
 
@@ -94,11 +97,11 @@ sequenceDiagram
 *   **FR-03 Automatic Switching**:
     *   Real-time monitoring of macOS `NSWorkspace` active application change notifications.
     *   Complete input method switching call within 100ms based on the configuration table.
-*   **FR-04 State Memory**: If the user manually switches the input method within an App (via system shortcut), the system should selectively record this change (temporary override or permanent rule update, options needed).
+*   **FR-04 State Memory**: If the user manually switches the input method within an App (via system shortcut), at this time, pause the input method switching function provided by this application for ten minutes.
 
 ### 3.2 Interface Functions
 *   **FR-05 Rule Management**:
-    *   Provide a visual list allowing users to search applications, add custom rules, and delete rules.
+    *   Provide a visual list allowing users to search applications, and delete rules.
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Default Policy**: Allow setting default behavior for "Unmatched Applications" (Keep Unchanged / Force English).
@@ -106,7 +109,7 @@ sequenceDiagram
     *   Provide toggles for **Auto-start at login**, **Show menu bar status icon**, and **Hide Dock icon**.
     *   Changes must persist across restarts and take effect at the system level.
 *   **FR-09 Manual Rescan**:
-    *   Provide a "重新扫描" action in the Rules view to refresh installed app list and re-run AI prediction.
+    *   Provide a "重新扫描" action in the Rules view to refresh installed app list and re-run AI prediction, and in this process, the input method switching function is temporarily paused.
     *   Must show a loading state and prevent duplicate triggers while scanning.
 
 ## 4. Non-functional Requirements

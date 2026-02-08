@@ -197,7 +197,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 1.  **Initialization**:
     *   Frontend checks if `get_llm_config` is empty.
     *   If empty -> Route to Onboarding page.
-    *   If not empty -> Route to Home page/Background mode.
+    *   If not empty -> Open Main Settings window directly.
     *   LLM configuration is only handled in onboarding; the main settings panel has no LLM settings tab.
 
 2.  **AI Prediction Flow**:
@@ -273,7 +273,7 @@ interface AppRule {
 *   **Logic**:
     *   **Pure LLM Inference**: System has no built-in static rules. Completely relies on Prompt to match app characteristics (name, category) with input method features.
 *   **Prompt Strategy**:
-    *   Instruct AI: "For the following applications, please select the most appropriate one from the given input method ID list. If it's a code editor, select the English ID; if it's a chat software, select the Chinese ID."
+    *   Instruct AI: "For the following applications, please select the most appropriate one from the given input method ID list based on how people *commonly use* it in daily life like If it's a code editor, select the English ID; if it's a chat software, select the Chinese ID."
 *   **Output**: Mapping table `Map<BundleID, InputSourceID>`.
 
 ### 4.5 Directory & State Management
