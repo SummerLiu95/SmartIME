@@ -3,9 +3,11 @@ use crate::error::{AppError, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tauri::image::Image;
 use tauri::AppHandle;
 
 pub const TRAY_ICON_ID: &str = "smartime-status";
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray/32x32.png");
 
 pub fn apply_general_settings(app: &AppHandle, settings: &GeneralSettings) -> Result<()> {
     apply_dock_visibility(app, settings.hide_dock_icon)?;
@@ -27,10 +29,9 @@ fn apply_tray_visibility(app: &AppHandle, show_menu_bar_status: bool) -> Result<
 
         if show_menu_bar_status {
             if app.tray_by_id(TRAY_ICON_ID).is_none() {
-                let icon = app
-                    .default_window_icon()
-                    .cloned()
-                    .ok_or_else(|| AppError::Config("Missing default window icon".to_string()))?;
+                let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
+                    AppError::Config(format!("Failed to load tray icon bytes: {}", e))
+                })?;
                 TrayIconBuilder::with_id(TRAY_ICON_ID)
                     .icon(icon)
                     .tooltip("SmartIME")

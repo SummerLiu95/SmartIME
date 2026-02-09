@@ -31,12 +31,11 @@ export function Sidebar({ className }: SidebarProps) {
       <div className="flex-1 px-6 pt-8 pb-4">
         {/* Header */}
         <div className="flex items-center gap-[10px] mb-8 px-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-[10px] bg-[#155dfc] shadow-[0px_4px_6px_-4px_rgba(43,127,255,0.2),0px_10px_15px_-3px_rgba(43,127,255,0.2)]">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 3.33334V12.6667" stroke="white" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M3.33331 8H12.6666" stroke="white" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
+          <img
+            src="/app_icon.svg"
+            alt="SmartIME"
+            className="h-8 w-8"
+          />
           <span className="text-base font-bold text-[#18181b] dark:text-[#fafafa] tracking-[-0.71px]">
             SmartIME
           </span>
