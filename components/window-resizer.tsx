@@ -8,12 +8,24 @@ export function WindowResizer() {
   const pathname = usePathname();
   const lastSize = useRef({ width: 0, height: 0 });
   const isUpdating = useRef(false);
+  const minSize = useRef<{ width: number; height: number }>({ width: 896, height: 600 });
 
   useEffect(() => {
     const isTauri = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: boolean }).__TAURI_INTERNALS__);
     if (!isTauri) {
       return;
     }
+
+    // Route-based design minimums
+    const getDesignMinSize = (path: string) => {
+      // Default main window target per design: 896x600
+      const defaults = { width: 896, height: 600 };
+      // Tray or compact views (if any): 300x400
+      if (path.startsWith("/tray")) return { width: 300, height: 400 };
+      // Future compact views could be listed here
+      return defaults;
+    };
+    minSize.current = getDesignMinSize(pathname || "/");
 
     const updateWindowSize = async () => {
       if (isUpdating.current) return;
@@ -41,11 +53,15 @@ export function WindowResizer() {
           doc.clientHeight
         );
 
-        if (width > 100 && height > 100) {
-          if (Math.abs(width - lastSize.current.width) > 5 || Math.abs(height - lastSize.current.height) > 5) {
+        const targetWidth = Math.max(width, minSize.current.width);
+        const targetHeight = Math.max(height, minSize.current.height);
+
+        if (targetWidth > 100 && targetHeight > 100) {
+          if (Math.abs(targetWidth - lastSize.current.width) > 5 || Math.abs(targetHeight - lastSize.current.height) > 5) {
             isUpdating.current = true;
-            await appWindow.setSize(new LogicalSize(Math.ceil(width), Math.ceil(height)));
-            lastSize.current = { width, height };
+            await appWindow.setMinSize(new LogicalSize(minSize.current.width, minSize.current.height));
+            await appWindow.setSize(new LogicalSize(Math.ceil(targetWidth), Math.ceil(targetHeight)));
+            lastSize.current = { width: targetWidth, height: targetHeight };
             isUpdating.current = false;
           }
         }

@@ -21,6 +21,11 @@ pub fn cmd_select_input_source(id: String) -> Result<()> {
 // Config Commands
 
 #[tauri::command]
+pub fn cmd_get_installed_apps() -> Result<Vec<SystemApp>> {
+    crate::system_apps::get_installed_apps()
+}
+
+#[tauri::command]
 pub fn cmd_save_config(
     config: AppConfig,
     state: State<'_, AppState>,
@@ -43,6 +48,12 @@ pub fn cmd_save_config(
 pub fn cmd_get_config(state: State<'_, AppState>) -> Result<AppConfig> {
     let manager = state.config.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
     Ok(manager.get_config())
+}
+
+#[tauri::command]
+pub fn cmd_has_config(state: State<'_, AppState>) -> Result<bool> {
+    let manager = state.config.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    Ok(manager.has_config_file())
 }
 
 // LLM Commands

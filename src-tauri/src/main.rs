@@ -40,8 +40,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             command::cmd_get_system_input_sources,
             command::cmd_select_input_source,
+            command::cmd_get_installed_apps,
             command::cmd_save_config,
             command::cmd_get_config,
+            command::cmd_has_config,
             command::cmd_save_llm_config,
             command::cmd_get_llm_config,
             command::cmd_check_llm_connection,

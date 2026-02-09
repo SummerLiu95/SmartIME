@@ -1,33 +1,46 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { ModeToggle } from "@/components/mode-toggle";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { API } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
 
-  return (
-    <main className="relative w-full flex flex-col items-center justify-center px-4 py-8 bg-background text-foreground">
-      {/* Top-right theme toggle */}
-      <div className="absolute top-4 right-4 z-10">
-        <ModeToggle />
-      </div>
+  useEffect(() => {
+    const route = async () => {
+      try {
+        const hasConfig = await API.hasConfig();
 
-      {/* Main card */}
-      <div className="w-full max-w-md bg-card rounded-2xl shadow-lg p-8 space-y-8">
-        <section className="flex flex-col gap-4">
-          <h3 className="text-sm font-medium text-muted-foreground text-center">Development Testing</h3>
-          <Button 
-            variant="outline" 
-            onClick={() => router.push("/onboarding")}
-            className="w-full gap-2 h-12"
-          >
-            Test Onboarding Flow <ChevronRight className="w-4 h-4" />
-          </Button>
-        </section>
-      </div>
-    </main>
+        if (!hasConfig) {
+          const hasPermission = await API.checkPermissions();
+          if (!hasPermission) {
+            router.replace("/onboarding");
+            return;
+          }
+          router.replace("/onboarding/llm");
+          return;
+        }
+
+        const hasPermission = await API.checkPermissions();
+        if (!hasPermission) {
+          router.replace("/onboarding");
+          return;
+        }
+
+        router.replace("/rules");
+      } catch (error) {
+        console.error("Failed to route app flow", error);
+        router.replace("/onboarding");
+      }
+    };
+
+    route();
+  }, [router]);
+
+  return (
+    <div className="h-screen w-full flex items-center justify-center text-sm text-muted-foreground">
+      正在初始化...
+    </div>
   );
 }

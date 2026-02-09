@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemApp {
     pub name: String,
     pub bundle_id: String,

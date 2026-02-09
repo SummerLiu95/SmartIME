@@ -107,6 +107,10 @@ impl ConfigManager {
         self.config.clone()
     }
 
+    pub fn has_config_file(&self) -> bool {
+        self.file_path.exists()
+    }
+
     pub fn set_config(&mut self, config: AppConfig) -> Result<()> {
         self.config = config;
         self.rebuild_cache();
