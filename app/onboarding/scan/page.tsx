@@ -87,9 +87,6 @@ export default function ScanOnboardingPage() {
         className={cn(
           "relative flex flex-col items-center",
           "w-[384px] h-[560px]",
-          "border border-[#e4e4e7] dark:border-zinc-800",
-          "rounded-[24px]",
-          "shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)]",
           "bg-white dark:bg-zinc-900",
           "px-8 pt-8 pb-[126px]"
         )}
