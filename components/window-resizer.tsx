@@ -3,12 +3,14 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getWindowSizing } from "@/lib/window-size";
 
 export function WindowResizer() {
   const pathname = usePathname();
   const lastSize = useRef({ width: 0, height: 0 });
   const isUpdating = useRef(false);
   const minSize = useRef<{ width: number; height: number }>({ width: 896, height: 600 });
+  const fixedSize = useRef<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const isTauri = typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: boolean }).__TAURI_INTERNALS__);
@@ -16,45 +18,46 @@ export function WindowResizer() {
       return;
     }
 
-    // Route-based design minimums
-    const getDesignMinSize = (path: string) => {
-      // Default main window target per design: 896x600
-      const defaults = { width: 896, height: 600 };
-      // Tray or compact views (if any): 300x400
-      if (path.startsWith("/tray")) return { width: 300, height: 400 };
-      // Future compact views could be listed here
-      return defaults;
-    };
-    minSize.current = getDesignMinSize(pathname || "/");
+    const sizing = getWindowSizing(pathname || "/");
+    minSize.current = sizing.min;
+    fixedSize.current = sizing.fixed;
 
     const updateWindowSize = async () => {
       if (isUpdating.current) return;
       
       try {
         const appWindow = getCurrentWindow();
-        const body = document.body;
-        const doc = document.documentElement;
-        if (!body || !doc) return;
+        let targetWidth = minSize.current.width;
+        let targetHeight = minSize.current.height;
 
-        const width = Math.max(
-          body.scrollWidth,
-          doc.scrollWidth,
-          body.offsetWidth,
-          doc.offsetWidth,
-          body.clientWidth,
-          doc.clientWidth
-        );
-        const height = Math.max(
-          body.scrollHeight,
-          doc.scrollHeight,
-          body.offsetHeight,
-          doc.offsetHeight,
-          body.clientHeight,
-          doc.clientHeight
-        );
+        if (fixedSize.current) {
+          targetWidth = fixedSize.current.width;
+          targetHeight = fixedSize.current.height;
+        } else {
+          const body = document.body;
+          const doc = document.documentElement;
+          if (!body || !doc) return;
 
-        const targetWidth = Math.max(width, minSize.current.width);
-        const targetHeight = Math.max(height, minSize.current.height);
+          const width = Math.max(
+            body.scrollWidth,
+            doc.scrollWidth,
+            body.offsetWidth,
+            doc.offsetWidth,
+            body.clientWidth,
+            doc.clientWidth
+          );
+          const height = Math.max(
+            body.scrollHeight,
+            doc.scrollHeight,
+            body.offsetHeight,
+            doc.offsetHeight,
+            body.clientHeight,
+            doc.clientHeight
+          );
+
+          targetWidth = Math.max(width, minSize.current.width);
+          targetHeight = Math.max(height, minSize.current.height);
+        }
 
         if (targetWidth > 100 && targetHeight > 100) {
           if (Math.abs(targetWidth - lastSize.current.width) > 5 || Math.abs(targetHeight - lastSize.current.height) > 5) {

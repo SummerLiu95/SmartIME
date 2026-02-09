@@ -78,18 +78,18 @@ export default function LLMOnboardingPage() {
   };
 
   return (
-    <div className="w-full bg-white dark:bg-zinc-900 flex justify-center">
+    <div className="w-full h-full bg-white dark:bg-zinc-900 flex justify-center">
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5 }}
         className={cn(
             "relative flex flex-col items-center w-full max-w-[336px]",
-            "px-0 pt-8 pb-12"
+            "px-0 pt-6 pb-6"
         )}
       >
         {/* Title */}
-        <div className="flex flex-col items-center gap-2 text-center w-full mb-8">
+        <div className="flex flex-col items-center gap-2 text-center w-full mb-6">
           <h1 className="text-2xl font-semibold text-[#18181b] dark:text-[#fafafa] tracking-[-0.53px] leading-8">
             LLM 设置
           </h1>
