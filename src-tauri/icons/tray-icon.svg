@@ -1,10 +1,16 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <g stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7.91667 9.66667L11.4167 13.1667"/>
-    <path d="M7.33333 13.1667L10.8333 9.66667L12 7.91667"/>
-    <path d="M6.16667 7.91667H13.1667"/>
-    <path d="M9.08333 6.16667H9.66667"/>
-    <path d="M17.8333 17.8333L14.9167 12L12 17.8333"/>
-    <path d="M13.1667 15.5H16.6667"/>
-  </g>
+  <defs>
+    <mask id="smartime-mask">
+      <rect width="24" height="24" rx="5" fill="white"/>
+      <g transform="translate(5 5)" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.91667 4.66667L6.41667 8.16667"/>
+        <path d="M2.33333 8.16667L5.83333 4.66667L7 2.91667"/>
+        <path d="M1.16667 2.91667H8.16667"/>
+        <path d="M4.08333 1.16667H4.66667"/>
+        <path d="M12.8333 12.8333L9.91667 7L7 12.8333"/>
+        <path d="M8.16667 10.5H11.6667"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="24" height="24" rx="5" fill="black" mask="url(#smartime-mask)"/>
 </svg>

@@ -1,5 +1,5 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(12 12) scale(0.72) translate(-12 -12)">
+  <g transform="translate(12 12) scale(0.8) translate(-12 -12)">
     <path d="M0 4C0 1.79086 1.79086 0 4 0H20C22.2091 0 24 1.79086 24 4V20C24 22.2091 22.2091 24 20 24H4C1.79086 24 0 22.2091 0 20V4Z" fill="#155DFC"/>
     <g clip-path="url(#clip0_47_340)">
       <path d="M7.91667 9.66667L11.4167 13.1667" stroke="white" stroke-width="1.16667" stroke-linecap="round" stroke-linejoin="round"/>
