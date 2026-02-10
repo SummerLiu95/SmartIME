@@ -16,7 +16,6 @@ pub struct AppRule {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GeneralSettings {
     pub auto_start: bool,
-    pub show_menu_bar_status: bool,
     pub hide_dock_icon: bool,
 }
 
@@ -24,7 +23,6 @@ impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             auto_start: true,
-            show_menu_bar_status: true,
             hide_dock_icon: false,
         }
     }
@@ -156,7 +154,6 @@ mod tests {
     fn test_general_settings_default() {
         let defaults = GeneralSettings::default();
         assert!(defaults.auto_start);
-        assert!(defaults.show_menu_bar_status);
         assert!(!defaults.hide_dock_icon);
     }
 

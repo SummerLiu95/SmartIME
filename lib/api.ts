@@ -23,7 +23,6 @@ export type AppConfig = {
   default_input: "en" | "zh" | "keep";
   general: {
     auto_start: boolean;
-    show_menu_bar_status: boolean;
     hide_dock_icon: boolean;
   };
   rules: AppRule[];
@@ -70,7 +69,6 @@ export const API = {
       default_input: "keep" as const,
       general: {
         auto_start: true,
-        show_menu_bar_status: true,
         hide_dock_icon: false,
       },
       rules: [

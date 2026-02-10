@@ -242,8 +242,7 @@ interface LLMConfig {
 ```typescript
 interface GeneralSettings {
   autoStart: boolean; // Start on login
-  showMenuBarStatus: boolean; // Show IME status icon in menu bar
-  hideDockIcon: boolean; // Run as menu bar only
+  hideDockIcon: boolean; // Run without Dock icon
 }
 ```
 
@@ -284,7 +283,6 @@ interface AppRule {
 ### 4.6 General Settings Integration (macOS)
 
 *   **Auto-start**: Use macOS login item mechanism (or a Tauri plugin if adopted) to register/unregister SmartIME at login.
-*   **Menu Bar Status**: Toggle visibility of the status icon in the tray window.
 *   **Hide Dock Icon**: Switch app activation policy to accessory-only; change may require app relaunch depending on implementation.
 
 ## 5. Build & Deployment

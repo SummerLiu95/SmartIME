@@ -49,7 +49,6 @@ export default function ScanOnboardingPage() {
           default_input: "keep",
           general: {
             auto_start: true,
-            show_menu_bar_status: true,
             hide_dock_icon: false,
           },
           rules: generatedRules,

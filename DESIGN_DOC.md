@@ -22,20 +22,13 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
     *   **Action**: "Test Connection" button (Loading state feedback) -> Show "Start Scanning" button upon success.
 *   **Step 3: Scan & Generate**: Progress bar displays application scanning and AI analysis progress.
 
-#### B. Menu Bar Popup (Tray Window)
-Small window pops up when clicking the menu bar icon.
-*   **Header**: App Name (SmartIME), right side includes "Settings" gear icon and "Pause" switch.
-*   **Current App**: Displays current foreground app's icon, name, and currently effective input method status.
-    *   *Animation*: When app switches, app icon and name should execute slight **Fade In / Fade Out** or **Slide Y** animation for smooth transition.
-
-#### C. Main Settings Panel (Main Window)
+#### B. Main Settings Panel (Main Window)
 *   **Tabs**:
     *   **Rules**: Rule management list.
-    *   **General**: Auto-start at login, tray icon style, etc.
+    *   **General**: Auto-start at login, Dock visibility, etc.
 *   **Left Sidebar**:
     *   App icon + name at the top.
     *   Navigation list (Rules / General).
-    *   **Status Card** at bottom with label "STATUS" and text "AI 预测已启用".
 *   **App List (Rules Tab)**:
     *   Use `Table` or `Card` list to display all configured apps.
     *   **Columns**: App Icon | App Name | Preferred Input Method (Dropdown: Only display system enabled input methods) | Action (Delete).
@@ -47,10 +40,9 @@ Small window pops up when clicking the menu bar icon.
 *   **Footer**: Status bar, displaying "AI Prediction Enabled" or "Rules Synced".
 *   **General Settings Tab**:
     *   Title "常规设置" with subtitle "管理应用的基础运行行为。".
-    *   Three **setting cards** (72px height) with toggle switches:
+    *   Two **setting cards** (72px height) with toggle switches:
         1. **登录时自动启动** (desc: 在您进入系统时开启 SmartIME) — default ON.
-        2. **在菜单栏显示状态** (desc: 显示当前 IME 状态图标) — default ON.
-        3. **隐藏 Dock 图标** (desc: 仅在菜单栏运行（推荐）) — default OFF.
+        2. **隐藏 Dock 图标** (desc: 仅在菜单栏运行（推荐）) — default OFF.
     *   Toggle styling: blue pill when ON, gray pill when OFF.
 
 ### 1.3 Responsive Design

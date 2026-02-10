@@ -11,7 +11,7 @@ const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray/32x32.png");
 
 pub fn apply_general_settings(app: &AppHandle, settings: &GeneralSettings) -> Result<()> {
     apply_dock_visibility(app, settings.hide_dock_icon)?;
-    apply_tray_visibility(app, settings.show_menu_bar_status)?;
+    ensure_tray_icon(app)?;
     apply_auto_start(app, settings.auto_start)?;
     Ok(())
 }
@@ -22,34 +22,28 @@ fn apply_dock_visibility(app: &AppHandle, hide_dock_icon: bool) -> Result<()> {
         .map_err(|e| AppError::Config(format!("Failed to update dock visibility: {}", e)))
 }
 
-fn apply_tray_visibility(app: &AppHandle, show_menu_bar_status: bool) -> Result<()> {
+fn ensure_tray_icon(app: &AppHandle) -> Result<()> {
     #[cfg(desktop)]
     {
         use tauri::tray::TrayIconBuilder;
 
-        if show_menu_bar_status {
-            if app.tray_by_id(TRAY_ICON_ID).is_none() {
-                let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
-                    AppError::Config(format!("Failed to load tray icon bytes: {}", e))
+        if app.tray_by_id(TRAY_ICON_ID).is_none() {
+            let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
+                AppError::Config(format!("Failed to load tray icon bytes: {}", e))
+            })?;
+            TrayIconBuilder::with_id(TRAY_ICON_ID)
+                .icon(icon)
+                .tooltip("SmartIME")
+                .icon_as_template(true)
+                .build(app)
+                .map_err(|e| {
+                    AppError::Config(format!("Failed to create tray icon: {}", e))
                 })?;
-                TrayIconBuilder::with_id(TRAY_ICON_ID)
-                    .icon(icon)
-                    .tooltip("SmartIME")
-                    .icon_as_template(true)
-                    .build(app)
-                    .map_err(|e| {
-                        AppError::Config(format!("Failed to create tray icon: {}", e))
-                    })?;
-            }
-            if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
-                tray
-                    .set_visible(true)
-                    .map_err(|e| AppError::Config(format!("Failed to show tray icon: {}", e)))?;
-            }
-        } else if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
+        }
+        if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
             tray
-                .set_visible(false)
-                .map_err(|e| AppError::Config(format!("Failed to hide tray icon: {}", e)))?;
+                .set_visible(true)
+                .map_err(|e| AppError::Config(format!("Failed to show tray icon: {}", e)))?;
         }
 
         Ok(())
@@ -58,7 +52,6 @@ fn apply_tray_visibility(app: &AppHandle, show_menu_bar_status: bool) -> Result<
     #[cfg(not(desktop))]
     {
         let _ = app;
-        let _ = show_menu_bar_status;
         Ok(())
     }
 }

@@ -73,10 +73,11 @@ sequenceDiagram
 This flow represents a **returning user** (not the first launch). All required permissions and LLM configuration are already completed.
 
 1.  User opens the app and the main settings window is shown directly.
-2.  Interface displays the identified application list and currently set input method (Icon representation: 🇨🇳 / 🇺🇸).
-3.  User clicks the input method icon of an application to switch (Override AI default setting).
-4.  Configuration is automatically saved and takes effect immediately.
-5.  Settings in the main interface are for rule management and general system behavior only.
+2.  When the user clicks the **menu bar icon**, the app opens the **main settings window** (same flow as a returning user; no separate popup window).
+3.  Interface displays the identified application list and currently set input method (Icon representation: 🇨🇳 / 🇺🇸).
+4.  User clicks the input method icon of an application to switch (Override AI default setting).
+5.  Configuration is automatically saved and takes effect immediately.
+6.  Settings in the main interface are for rule management and general system behavior only.
 
 ## 3. Functional Requirements
 
@@ -106,7 +107,7 @@ This flow represents a **returning user** (not the first launch). All required p
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Default Policy**: Allow setting default behavior for "Unmatched Applications" (Keep Unchanged / Force English).
 *   **FR-08 General Settings**:
-    *   Provide toggles for **Auto-start at login**, **Show menu bar status icon**, and **Hide Dock icon**.
+    *   Provide toggles for **Auto-start at login** and **Hide Dock icon**.
     *   Changes must persist across restarts and take effect at the system level.
 *   **FR-09 Manual Rescan**:
     *   Provide a "重新扫描" action in the Rules view to refresh installed app list and re-run AI prediction, and in this process, the input method switching function is temporarily paused.

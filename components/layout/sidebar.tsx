@@ -75,17 +75,6 @@ export function Sidebar({ className }: SidebarProps) {
         </div>
       </div>
 
-      {/* Status Footer */}
-      <div className="mt-auto px-4 pb-6">
-        <div className="rounded-[14px] border border-[#dbeafe]/50 bg-[#eff6ff]/50 dark:bg-blue-950/20 dark:border-blue-900/30 px-3 py-3">
-          <div className="text-[10px] font-bold text-[#155dfc]/80 dark:text-blue-400 tracking-[1.12px] uppercase mb-1">
-            Status
-          </div>
-          <div className="text-xs font-medium text-[#52525c] dark:text-[#a1a1aa]">
-            AI 预测已启用
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

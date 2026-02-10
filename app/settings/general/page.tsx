@@ -12,7 +12,6 @@ const EMPTY_CONFIG: AppConfig = {
   default_input: "keep",
   general: {
     auto_start: true,
-    show_menu_bar_status: true,
     hide_dock_icon: false,
   },
   rules: [],
@@ -60,12 +59,6 @@ export default function GeneralSettingsPage() {
       title: "登录时自动启动",
       description: "在您进入系统时开启 SmartIME",
       value: config.general.auto_start,
-    },
-    {
-      key: "show_menu_bar_status" as const,
-      title: "在菜单栏显示状态",
-      description: "显示当前 IME 状态图标",
-      value: config.general.show_menu_bar_status,
     },
     {
       key: "hide_dock_icon" as const,
