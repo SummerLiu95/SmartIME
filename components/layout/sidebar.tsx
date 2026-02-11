@@ -15,8 +15,8 @@ export function Sidebar({ className }: SidebarProps) {
     {
       label: "规则管理",
       icon: LayoutGrid,
-      href: "/rules",
-      active: pathname === "/rules" || pathname === "/",
+      href: "/settings/rules",
+      active: pathname === "/settings/rules" || pathname === "/",
     },
     {
       label: "常规设置",

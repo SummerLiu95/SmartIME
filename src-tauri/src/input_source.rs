@@ -1,6 +1,7 @@
 use crate::error::{AppError, Result};
 use core_foundation::array::{CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef};
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
+use core_foundation::boolean::{CFBoolean, CFBooleanRef};
 use core_foundation::dictionary::CFDictionaryRef;
 use core_foundation::string::{CFString, CFStringRef};
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,12 @@ extern "C" {
     pub static kTISPropertyInputSourceID: CFStringRef;
     pub static kTISPropertyLocalizedName: CFStringRef;
     pub static kTISPropertyInputSourceCategory: CFStringRef;
+    pub static kTISPropertyInputSourceType: CFStringRef;
+    pub static kTISPropertyInputSourceIsEnabled: CFStringRef;
+    pub static kTISPropertyInputSourceIsSelectCapable: CFStringRef;
     pub static kTISCategoryKeyboardInputSource: CFStringRef;
+    pub static kTISTypeKeyboardInputMode: CFStringRef;
+    pub static kTISTypeKeyboardLayout: CFStringRef;
 
     pub fn TISCreateInputSourceList(
         properties: CFDictionaryRef,
@@ -53,11 +59,12 @@ pub fn get_system_input_sources() -> Result<Vec<InputSource>> {
         let count = CFArrayGetCount(source_list);
         for i in 0..count {
             let source = CFArrayGetValueAtIndex(source_list, i) as TISInputSourceRef;
+            if !is_selectable_keyboard_source(source) {
+                continue;
+            }
+
             if let Some(s) = parse_input_source(source) {
-                // 仅保留键盘输入法，过滤掉其他类型的 Input Source
-                // if s.category == "TISCategoryKeyboardInputSource" {
                 sources.push(s);
-                // }
             }
         }
 
@@ -133,6 +140,54 @@ unsafe fn parse_input_source(source: TISInputSourceRef) -> Option<InputSource> {
     Some(InputSource { id, name, category })
 }
 
+unsafe fn is_selectable_keyboard_source(source: TISInputSourceRef) -> bool {
+    let category_ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceCategory);
+    let source_type_ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceType);
+    let is_enabled_ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled);
+    let is_select_capable_ptr =
+        TISGetInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable);
+
+    if category_ptr.is_null()
+        || source_type_ptr.is_null()
+        || is_enabled_ptr.is_null()
+        || is_select_capable_ptr.is_null()
+    {
+        return false;
+    }
+
+    let category = CFString::wrap_under_get_rule(category_ptr as CFStringRef).to_string();
+    let source_type = CFString::wrap_under_get_rule(source_type_ptr as CFStringRef).to_string();
+    let keyboard_category = CFString::wrap_under_get_rule(kTISCategoryKeyboardInputSource).to_string();
+    let keyboard_layout_type = CFString::wrap_under_get_rule(kTISTypeKeyboardLayout).to_string();
+    let keyboard_input_mode_type =
+        CFString::wrap_under_get_rule(kTISTypeKeyboardInputMode).to_string();
+
+    let is_enabled = CFBoolean::wrap_under_get_rule(is_enabled_ptr as CFBooleanRef).into();
+    let is_select_capable =
+        CFBoolean::wrap_under_get_rule(is_select_capable_ptr as CFBooleanRef).into();
+
+    category == keyboard_category
+        && (source_type == keyboard_layout_type || source_type == keyboard_input_mode_type)
+        && is_enabled
+        && is_select_capable
+}
+
+#[cfg(test)]
+fn should_include_source(
+    category: &str,
+    source_type: &str,
+    keyboard_category: &str,
+    keyboard_layout_type: &str,
+    keyboard_input_mode_type: &str,
+    is_enabled: bool,
+    is_select_capable: bool,
+) -> bool {
+    category == keyboard_category
+        && (source_type == keyboard_layout_type || source_type == keyboard_input_mode_type)
+        && is_enabled
+        && is_select_capable
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +202,72 @@ mod tests {
                 println!("Found source: {:?}", source);
             }
         }
+    }
+
+    #[test]
+    fn test_should_include_source_filters_non_selectable_sources() {
+        let keyboard_category = "TISCategoryKeyboardInputSource";
+        let keyboard_layout = "TISTypeKeyboardLayout";
+        let keyboard_input_mode = "TISTypeKeyboardInputMode";
+
+        assert!(should_include_source(
+            keyboard_category,
+            keyboard_layout,
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            true,
+            true,
+        ));
+
+        assert!(should_include_source(
+            keyboard_category,
+            keyboard_input_mode,
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            true,
+            true,
+        ));
+
+        assert!(!should_include_source(
+            "TISCategoryPaletteInputSource",
+            keyboard_input_mode,
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            true,
+            true,
+        ));
+
+        assert!(!should_include_source(
+            keyboard_category,
+            "TISTypeInk",
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            true,
+            true,
+        ));
+
+        assert!(!should_include_source(
+            keyboard_category,
+            keyboard_layout,
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            false,
+            true,
+        ));
+
+        assert!(!should_include_source(
+            keyboard_category,
+            keyboard_layout,
+            keyboard_category,
+            keyboard_layout,
+            keyboard_input_mode,
+            true,
+            false,
+        ));
     }
 }

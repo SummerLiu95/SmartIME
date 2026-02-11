@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { API, AppConfig, InputSource } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { RefreshCw, Search, Trash2 } from "lucide-react";
+import { InputMethodSelector } from "@/components/settings/rules/input-method-selector";
 
 const EMPTY_CONFIG: AppConfig = {
   version: 1,
@@ -84,6 +85,20 @@ export default function RulesPage() {
     }
   };
 
+  const handleRuleUpdate = async (bundleId: string, preferredInput: string) => {
+    const nextRules = rules.map((rule) => {
+      if (rule.bundle_id === bundleId) {
+        return {
+          ...rule,
+          preferred_input: preferredInput,
+          is_ai_generated: false, // Mark as manual override
+        };
+      }
+      return rule;
+    });
+    await handleSaveConfig({ ...config, rules: nextRules });
+  };
+
   const deleteRule = async (bundleId: string) => {
     const nextRules = rules.filter((rule) => rule.bundle_id !== bundleId);
     await handleSaveConfig({ ...config, rules: nextRules });
@@ -110,17 +125,7 @@ export default function RulesPage() {
     }
   };
 
-  const getInputSourceLabel = (inputId: string) => {
-    const source = inputSources.find((s) => s.id === inputId);
-    if (!source) return { icon: "A", name: inputId };
-    
-    // Simple heuristic for icon
-    const isChinese = source.name.includes("Chinese") || source.id.includes("SCIM");
-    return {
-      icon: isChinese ? "中" : "A",
-      name: source.name.replace("Input Method", "").trim()
-    };
-  };
+
 
   return (
     <AppLayout>
@@ -179,7 +184,6 @@ export default function RulesPage() {
             </div>
           ) : (
             filteredRules.map((rule) => {
-              const inputInfo = getInputSourceLabel(rule.preferred_input);
               return (
                 <div 
                   key={rule.bundle_id}
@@ -200,17 +204,11 @@ export default function RulesPage() {
 
                   {/* Input Method Badge */}
                   <div className="w-[229px]">
-                    <div className="inline-flex items-center gap-3 px-3 py-1.5 rounded-[10px] border border-[#e4e4e7] dark:border-zinc-700 bg-white dark:bg-zinc-800 min-w-[84px] h-[32px]">
-                      <span className={cn(
-                        "text-xs font-medium",
-                        inputInfo.icon === "中" ? "text-[#2b7fff]" : "text-[#2b7fff]" // Both blue in Figma design
-                      )}>
-                        {inputInfo.icon}
-                      </span>
-                      <span className="text-xs font-medium text-[#52525c] dark:text-zinc-400">
-                        {inputInfo.name}
-                      </span>
-                    </div>
+                    <InputMethodSelector
+                      value={rule.preferred_input}
+                      options={inputSources}
+                      onSelect={(val) => handleRuleUpdate(rule.bundle_id, val)}
+                    />
                   </div>
 
                   {/* Action */}

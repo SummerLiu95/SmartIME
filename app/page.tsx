@@ -15,7 +15,7 @@ export default function Home() {
         if (!hasConfig) {
           const hasPermission = await API.checkPermissions();
           if (!hasPermission) {
-            router.replace("/onboarding");
+            router.replace("/onboarding/permission");
             return;
           }
           router.replace("/onboarding/llm");
@@ -24,14 +24,14 @@ export default function Home() {
 
         const hasPermission = await API.checkPermissions();
         if (!hasPermission) {
-          router.replace("/onboarding");
+          router.replace("/onboarding/permission");
           return;
         }
 
-        router.replace("/rules");
+        router.replace("/settings/rules");
       } catch (error) {
         console.error("Failed to route app flow", error);
-        router.replace("/onboarding");
+        router.replace("/onboarding/permission");
       }
     };
 
