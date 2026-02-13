@@ -117,6 +117,14 @@ export const API = {
   },
 
   /**
+   * 请求辅助功能授权（会触发 macOS 原生授权弹窗）
+   */
+  requestPermissions: async (): Promise<boolean> => {
+    if (!API._isTauri()) return true;
+    return API._invoke('cmd_request_permissions');
+  },
+
+  /**
    * 打开 macOS 系统设置 (隐私 > 辅助功能)
    */
   openSystemSettings: async (): Promise<void> => {
@@ -167,6 +175,23 @@ export const API = {
       return;
     }
     return API._invoke('cmd_save_config', { config });
+  },
+
+  /**
+   * 仅保存规则，避免覆盖其他配置项
+   */
+  saveRules: async (rules: AppRule[]): Promise<void> => {
+    if (!API._isTauri()) {
+      API._mock.config = {
+        ...API._mock.config,
+        rules,
+      };
+      try {
+        localStorage.setItem('smartime_config', JSON.stringify(API._mock.config));
+      } catch {}
+      return;
+    }
+    return API._invoke('cmd_save_rules', { rules });
   },
 
   /**

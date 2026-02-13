@@ -126,3 +126,33 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes loading-dot-blink {
+  0%,
+  20% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.25;
+  }
+}
+
+.loading-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.25;
+  animation: loading-dot-blink 1.2s ease-in-out infinite;
+}
+
+.loading-dot-2 {
+  animation-delay: 0.2s;
+}
+
+.loading-dot-3 {
+  animation-delay: 0.4s;
+}

@@ -24,11 +24,15 @@ export default function OnboardingPage() {
     if (!silent) setPermissionStatus("checking");
     
     try {
-      const granted = await API.checkPermissions();
+      let granted = await API.checkPermissions();
+      if (!granted && !silent) {
+        await API.requestPermissions();
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        granted = await API.checkPermissions();
+      }
+
       if (granted) {
         setPermissionStatus("granted");
-        // 可以在这里处理跳转逻辑，或者让用户点击按钮跳转
-        // setTimeout(() => router.push('/next-step'), 1000); 
       } else {
         setPermissionStatus("denied");
       }
@@ -40,9 +44,20 @@ export default function OnboardingPage() {
 
   const handleOpenSettings = async () => {
     try {
+      setPermissionStatus("checking");
+      await API.requestPermissions();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const granted = await API.checkPermissions();
+      if (granted) {
+        setPermissionStatus("granted");
+        return;
+      }
+
+      setPermissionStatus("denied");
       await API.openSystemSettings();
     } catch (error) {
       console.error("Failed to open settings:", error);
+      setPermissionStatus("denied");
     }
   };
 
@@ -100,7 +115,7 @@ export default function OnboardingPage() {
                 </div>
                 <div className="flex items-center h-5">
                     <span className="text-sm text-[#71717b] dark:text-[#a1a1aa] leading-5 tracking-[-0.15px]">
-                        请在列表中找到并勾选 SmartIME。
+                        点击此卡片先触发系统授权弹窗，若失败再手动前往设置勾选。
                     </span>
                 </div>
              </div>

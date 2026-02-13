@@ -23,9 +23,6 @@ pub enum AppError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-
-    #[error("Unknown error: {0}")]
-    Unknown(String),
 }
 
 impl Serialize for AppError {

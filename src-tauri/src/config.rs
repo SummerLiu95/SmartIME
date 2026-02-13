@@ -121,14 +121,6 @@ impl ConfigManager {
         }
         self.rule_map.get(bundle_id).cloned()
     }
-    
-    pub fn add_or_update_rule(&mut self, rule: AppRule) -> Result<()> {
-        // 移除旧规则
-        self.config.rules.retain(|r| r.bundle_id != rule.bundle_id);
-        self.config.rules.push(rule);
-        self.rebuild_cache();
-        self.save()
-    }
 }
 
 // 供 Tauri 状态管理的线程安全容器

@@ -45,6 +45,18 @@ pub fn cmd_save_config(
 }
 
 #[tauri::command]
+pub fn cmd_save_rules(rules: Vec<AppRule>, state: State<'_, AppState>) -> Result<()> {
+    let mut manager = state
+        .config
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+
+    let mut config = manager.get_config();
+    config.rules = rules;
+    manager.set_config(config)
+}
+
+#[tauri::command]
 pub fn cmd_get_config(state: State<'_, AppState>) -> Result<AppConfig> {
     let manager = state.config.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
     Ok(manager.get_config())
@@ -67,8 +79,7 @@ pub async fn cmd_check_llm_connection(config: LLMConfig) -> Result<bool> {
 #[tauri::command]
 pub fn cmd_save_llm_config(config: LLMConfig, state: State<'_, AppState>) -> Result<()> {
     let mut llm = state.llm.lock().map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-    llm.update_config(config);
-    Ok(())
+    llm.update_config(config)
 }
 
 #[tauri::command]
@@ -135,9 +146,28 @@ fn filter_target_apps(apps: Vec<SystemApp>) -> Vec<SystemApp> {
 
 #[tauri::command]
 pub fn cmd_check_permissions() -> bool {
-    // 简单检查是否能获取到输入法列表（通常需要权限）
-    // 更严格的检查可能需要 AXIsProcessTrusted
-    get_system_input_sources().is_ok()
+    #[cfg(target_os = "macos")]
+    {
+        return request_accessibility_permission(false);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+pub fn cmd_request_permissions() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return request_accessibility_permission(true);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
 }
 
 #[tauri::command]
@@ -146,6 +176,31 @@ pub fn cmd_open_system_settings() {
     let _ = std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         .spawn();
+}
+
+#[cfg(target_os = "macos")]
+fn request_accessibility_permission(prompt: bool) -> bool {
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::string::{CFString, CFStringRef};
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
+    }
+
+    unsafe {
+        if !prompt {
+            return AXIsProcessTrustedWithOptions(std::ptr::null());
+        }
+
+        let prompt_key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+        let options: CFDictionary<CFString, CFBoolean> =
+            CFDictionary::from_CFType_pairs(&[(prompt_key, CFBoolean::true_value())]);
+        AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef())
+    }
 }
 
 #[cfg(test)]

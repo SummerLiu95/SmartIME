@@ -1,5 +1,7 @@
 #![allow(deprecated)] // Suppress warnings for deprecated cocoa APIs
 
+use crate::config::AppState;
+use crate::input_source::select_input_source;
 use cocoa::base::{id, nil};
 use cocoa::foundation::{NSAutoreleasePool, NSString};
 use objc::declare::ClassDecl;
@@ -9,7 +11,8 @@ use once_cell::sync::OnceCell;
 use std::ffi::CStr;
 use std::sync::mpsc::Sender;
 use std::sync::Once;
-use tauri::{AppHandle, Emitter};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager};
 
 // 定义事件数据结构
 #[derive(Debug, Clone, serde::Serialize)]
@@ -37,11 +40,40 @@ pub fn setup_observer(app_handle: AppHandle) {
 
     // 启动一个线程来处理事件并发送给前端
     std::thread::spawn(move || {
+        let mut last_bundle_id = String::new();
+        let mut last_selected_input = String::new();
+
         while let Ok(event) = rx.recv() {
+            if event.bundle_id == last_bundle_id {
+                continue;
+            }
+            last_bundle_id = event.bundle_id.clone();
+
             // println!("App focused: {:?}", event);
             // 发送事件到前端
             if let Err(e) = app_handle.emit("app_focused", &event) {
                 eprintln!("Failed to emit app_focused event: {}", e);
+            }
+
+            match apply_input_source_for_bundle_on_main_thread(
+                &app_handle,
+                event.bundle_id.clone(),
+                if last_selected_input.is_empty() {
+                    None
+                } else {
+                    Some(last_selected_input.clone())
+                },
+            ) {
+                Ok(Some(selected_input)) => {
+                    last_selected_input = selected_input;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!(
+                        "Failed to switch input source for {} ({}): {}",
+                        event.app_name, event.bundle_id, e
+                    );
+                }
             }
         }
     });
@@ -88,9 +120,54 @@ pub fn setup_observer(app_handle: AppHandle) {
     }
 }
 
+fn resolve_target_input_source(app_handle: &AppHandle, bundle_id: &str) -> Option<String> {
+    let state = app_handle.state::<AppState>();
+    let manager = state.config.lock().ok()?;
+    if !manager.get_config().global_switch {
+        return None;
+    }
+
+    manager.get_rule(bundle_id)
+}
+
+fn apply_input_source_for_bundle_on_main_thread(
+    app_handle: &AppHandle,
+    bundle_id: String,
+    previous_selected_input: Option<String>,
+) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+    let schedule_handle = app_handle.clone();
+    let resolve_handle = app_handle.clone();
+
+    schedule_handle
+        .run_on_main_thread(move || {
+            let result = (|| -> Result<Option<String>, String> {
+                let Some(target_input) = resolve_target_input_source(&resolve_handle, &bundle_id) else {
+                    return Ok(None);
+                };
+
+                if previous_selected_input
+                    .as_ref()
+                    .is_some_and(|current| current == &target_input)
+                {
+                    return Ok(Some(target_input));
+                }
+
+                select_input_source(&target_input).map_err(|e| e.to_string())?;
+                Ok(Some(target_input))
+            })();
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("Failed to schedule main-thread input resolution: {}", e))?;
+
+    rx.recv_timeout(Duration::from_millis(500))
+        .map_err(|e| format!("Timed out waiting main-thread input resolution: {}", e))?
+}
+
 // Objective-C 回调函数
 extern "C" fn app_activated_impl(_this: &Object, _cmd: Sel, notification: id) {
     unsafe {
+        let pool = NSAutoreleasePool::new(nil);
         let user_info: id = msg_send![notification, userInfo];
         let key = NSString::alloc(nil).init_str("NSWorkspaceApplicationKey");
         let app: id = msg_send![user_info, objectForKey: key];
@@ -99,19 +176,8 @@ extern "C" fn app_activated_impl(_this: &Object, _cmd: Sel, notification: id) {
             let bundle_id: id = msg_send![app, bundleIdentifier];
             let app_name: id = msg_send![app, localizedName];
 
-            let b_id = if bundle_id != nil {
-                let bytes = CStr::from_ptr(cocoa::foundation::NSString::UTF8String(bundle_id));
-                bytes.to_string_lossy().into_owned()
-            } else {
-                "unknown".to_string()
-            };
-            
-            let a_name = if app_name != nil {
-                let bytes = CStr::from_ptr(cocoa::foundation::NSString::UTF8String(app_name));
-                bytes.to_string_lossy().into_owned()
-            } else {
-                "unknown".to_string()
-            };
+            let b_id = nsstring_to_owned(bundle_id).unwrap_or_else(|| "unknown".to_string());
+            let a_name = nsstring_to_owned(app_name).unwrap_or_else(|| "unknown".to_string());
 
             // 发送到 Channel
             if let Some(tx) = APP_EVENT_TX.get() {
@@ -121,5 +187,17 @@ extern "C" fn app_activated_impl(_this: &Object, _cmd: Sel, notification: id) {
                 });
             }
         }
+        pool.drain();
     }
+}
+
+unsafe fn nsstring_to_owned(value: id) -> Option<String> {
+    if value == nil {
+        return None;
+    }
+    let ptr = cocoa::foundation::NSString::UTF8String(value);
+    if ptr.is_null() {
+        return None;
+    }
+    Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
 }

@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::image::Image;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 pub const TRAY_ICON_ID: &str = "smartime-status";
 const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray/32x32.png");
@@ -17,15 +17,24 @@ pub fn apply_general_settings(app: &AppHandle, settings: &GeneralSettings) -> Re
 }
 
 fn apply_dock_visibility(app: &AppHandle, hide_dock_icon: bool) -> Result<()> {
-    // When hide_dock_icon is true, dock visibility should be false.
-    app.set_dock_visibility(!hide_dock_icon)
+    // Keep the dock visible while the settings window is currently open,
+    // and only hide the dock after users close the window into tray mode.
+    let should_show_dock = if hide_dock_icon {
+        app.get_webview_window("main")
+            .and_then(|window| window.is_visible().ok())
+            .unwrap_or(false)
+    } else {
+        true
+    };
+
+    app.set_dock_visibility(should_show_dock)
         .map_err(|e| AppError::Config(format!("Failed to update dock visibility: {}", e)))
 }
 
 fn ensure_tray_icon(app: &AppHandle) -> Result<()> {
     #[cfg(desktop)]
     {
-        use tauri::tray::TrayIconBuilder;
+        use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
         if app.tray_by_id(TRAY_ICON_ID).is_none() {
             let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
@@ -35,6 +44,21 @@ fn ensure_tray_icon(app: &AppHandle) -> Result<()> {
                 .icon(icon)
                 .tooltip("SmartIME")
                 .icon_as_template(true)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
                 .build(app)
                 .map_err(|e| {
                     AppError::Config(format!("Failed to create tray icon: {}", e))
@@ -107,9 +131,9 @@ fn launch_agent_path(label: &str) -> Result<PathBuf> {
 #[cfg(target_os = "macos")]
 fn build_launch_agent_plist(label: &str, exec_path: &Path) -> String {
     format!(
-        r#"<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
-<plist version=\"1.0\">
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <dict>
   <key>Label</key>
   <string>{label}</string>
@@ -215,6 +239,7 @@ mod tests {
         let label = "com.smartime.app";
         let exec_path = Path::new("/Applications/SmartIME.app/Contents/MacOS/SmartIME");
         let plist = build_launch_agent_plist(label, exec_path);
+        assert!(!plist.contains("\\\""));
         assert!(plist.contains("<key>Label</key>"));
         assert!(plist.contains(label));
         assert!(plist.contains(exec_path.to_str().unwrap()));

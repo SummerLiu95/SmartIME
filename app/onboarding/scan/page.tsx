@@ -14,6 +14,7 @@ export default function ScanOnboardingPage() {
   const [phase, setPhase] = useState<ScanPhase>("scanning");
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [scanAttempt, setScanAttempt] = useState(0);
 
   const statusText = useMemo(() => {
     if (phase === "error") return "生成失败";
@@ -23,6 +24,10 @@ export default function ScanOnboardingPage() {
   }, [phase]);
 
   useEffect(() => {
+    setPhase("scanning");
+    setProgress(0);
+    setErrorMessage("");
+
     let active = true;
     let localProgress = 0;
     const timer = setInterval(() => {
@@ -75,7 +80,7 @@ export default function ScanOnboardingPage() {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [scanAttempt]);
 
   return (
     <div className="w-full h-full bg-white dark:bg-zinc-900 flex items-center justify-center">
@@ -149,19 +154,33 @@ export default function ScanOnboardingPage() {
           <Button
             className={cn(
               "w-full h-[68px] rounded-[10px]",
-              "bg-[#009966] hover:bg-[#008055]",
+              phase === "generated"
+                ? "bg-[#009966] hover:bg-[#008055]"
+                : phase === "error"
+                  ? "bg-[#155dfc] hover:bg-[#155dfc]/90"
+                  : "bg-[#009966]",
               "text-white text-sm font-medium tracking-[-0.15px]",
               "flex items-center justify-between px-[63px]",
-              phase !== "generated" && "opacity-50 cursor-not-allowed"
+              phase !== "generated" && phase !== "error" && "opacity-50 cursor-not-allowed"
             )}
             onClick={() => {
               if (phase === "generated") {
                 router.push("/");
+                return;
+              }
+              if (phase === "error") {
+                setScanAttempt((count) => count + 1);
               }
             }}
-            disabled={phase !== "generated"}
+            disabled={phase !== "generated" && phase !== "error"}
           >
-            <span>开启 SmartIME之旅</span>
+            <span>
+              {phase === "generated"
+                ? "开启 SmartIME之旅"
+                : phase === "error"
+                  ? "重试扫描"
+                  : "处理中..."}
+            </span>
             <svg
               width="16"
               height="16"

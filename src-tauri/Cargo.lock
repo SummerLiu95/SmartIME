@@ -91,31 +91,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cocoa",
- "core-foundation 0.10.1",
- "dirs",
- "dotenvy",
- "log",
- "objc",
- "once_cell",
- "plist",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-core",
- "tauri-plugin-log",
- "tauri-plugin-store",
- "thiserror 2.0.18",
- "walkdir",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3702,6 +3677,31 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smartime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cocoa",
+ "core-foundation 0.10.1",
+ "dirs",
+ "dotenvy",
+ "log",
+ "objc",
+ "once_cell",
+ "plist",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-core",
+ "tauri-plugin-log",
+ "tauri-plugin-store",
+ "thiserror 2.0.18",
+ "walkdir",
+]
 
 [[package]]
 name = "socket2"

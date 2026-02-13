@@ -2,6 +2,7 @@
 
 import type { HTMLAttributes } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LayoutGrid, Settings } from "lucide-react"
@@ -31,9 +32,11 @@ export function Sidebar({ className }: SidebarProps) {
       <div className="flex-1 px-6 pt-8 pb-4">
         {/* Header */}
         <div className="flex items-center gap-[10px] mb-8 px-0">
-          <img
+          <Image
             src="/app_icon.svg"
             alt="SmartIME"
+            width={32}
+            height={32}
             className="h-8 w-8"
           />
           <span className="text-base font-bold text-[#18181b] dark:text-[#fafafa] tracking-[-0.71px]">

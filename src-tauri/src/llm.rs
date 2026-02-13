@@ -3,7 +3,8 @@ use crate::input_source::InputSource;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LLMConfig {
@@ -26,6 +27,7 @@ impl Default for LLMConfig {
 pub struct LLMClient {
     client: Client,
     config: LLMConfig,
+    file_path: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,16 +55,27 @@ struct ChatChoice {
 
 impl LLMClient {
     pub fn new() -> Self {
-        // 尝试从 .env.llm 加载
-        let config = Self::load_from_env().unwrap_or_default();
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("smartime");
+        let _ = fs::create_dir_all(&config_dir);
+        let file_path = config_dir.join("llm_config.json");
+
+        // 优先读取持久化配置，随后回退到 .env.llm
+        let config = Self::load_from_file(&file_path)
+            .or_else(Self::load_from_env)
+            .unwrap_or_default();
+
         Self {
             client: Client::new(),
             config,
+            file_path,
         }
     }
 
-    pub fn update_config(&mut self, config: LLMConfig) {
+    pub fn update_config(&mut self, config: LLMConfig) -> Result<()> {
         self.config = config;
+        self.save_to_file()
     }
 
     pub fn get_config(&self) -> LLMConfig {
@@ -87,6 +100,20 @@ impl LLMClient {
             model,
             base_url,
         })
+    }
+
+    fn load_from_file(path: &Path) -> Option<LLMConfig> {
+        if !path.exists() {
+            return None;
+        }
+        let content = fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    fn save_to_file(&self) -> Result<()> {
+        let content = serde_json::to_string_pretty(&self.config)?;
+        fs::write(&self.file_path, content)?;
+        Ok(())
     }
 
     /// 检查 LLM 连接配置是否有效

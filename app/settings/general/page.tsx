@@ -34,14 +34,7 @@ export default function GeneralSettingsPage() {
     load();
   }, []);
 
-  const updateSetting = async (key: keyof AppConfig["general"], value: boolean) => {
-    const nextConfig = {
-      ...config,
-      general: {
-        ...config.general,
-        [key]: value,
-      },
-    };
+  const persistConfig = async (nextConfig: AppConfig) => {
     setConfig(nextConfig);
     setIsSaving(true);
     try {
@@ -51,6 +44,24 @@ export default function GeneralSettingsPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const updateSetting = async (key: keyof AppConfig["general"], value: boolean) => {
+    const nextConfig = {
+      ...config,
+      general: {
+        ...config.general,
+        [key]: value,
+      },
+    };
+    await persistConfig(nextConfig);
+  };
+
+  const updateGlobalSwitch = async (value: boolean) => {
+    await persistConfig({
+      ...config,
+      global_switch: value,
+    });
   };
 
   const settings = [
@@ -63,7 +74,7 @@ export default function GeneralSettingsPage() {
     {
       key: "hide_dock_icon" as const,
       title: "隐藏 Dock 图标",
-      description: "仅在菜单栏运行（推荐）",
+      description: "关闭主窗口后继续在菜单栏后台运行（推荐）",
       value: config.general.hide_dock_icon,
     },
   ];
@@ -83,6 +94,33 @@ export default function GeneralSettingsPage() {
 
         {/* Settings List */}
         <div className="flex flex-col gap-4 max-w-[670px]">
+          <div
+            className={cn(
+              "flex items-center justify-between px-[15px] h-[72px]",
+              "bg-[#fafafa] dark:bg-zinc-800",
+              "border border-[#e4e4e7] dark:border-zinc-700",
+              "rounded-[14px]"
+            )}
+          >
+            <div className="flex flex-col gap-[2px]">
+              <div className="text-sm font-medium text-[#18181b] dark:text-[#fafafa] tracking-[-0.15px]">
+                自动切换总开关
+              </div>
+              <div className="text-xs text-[#71717b] dark:text-[#a1a1aa]">
+                关闭后 SmartIME 不会自动切换输入法
+              </div>
+            </div>
+            <Switch
+              checked={config.global_switch}
+              onCheckedChange={updateGlobalSwitch}
+              disabled={isSaving}
+              className={cn(
+                "data-[state=checked]:bg-[#155dfc]",
+                isSaving && "opacity-60"
+              )}
+            />
+          </div>
+
           {settings.map((setting) => (
             <div
               key={setting.key}

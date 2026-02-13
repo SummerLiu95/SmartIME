@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API, AppConfig, InputSource } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { RefreshCw, Search, Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { InputMethodSelector } from "@/components/settings/rules/input-method-selector";
 
 const EMPTY_CONFIG: AppConfig = {
@@ -27,6 +27,13 @@ export default function RulesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRescanning, setIsRescanning] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -35,12 +42,15 @@ export default function RulesPage() {
           API.getConfig(),
           API.getSystemInputSources(),
         ]);
+        if (!isMountedRef.current) return;
         setConfig(currentConfig);
         setInputSources(sources);
       } catch (error) {
         console.error("Failed to load rules data", error);
       } finally {
-        setIsLoading(false);
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -56,7 +66,9 @@ export default function RulesPage() {
       try {
         const { getVersion } = await import("@tauri-apps/api/app");
         const version = await getVersion();
-        setAppVersion(version);
+        if (isMountedRef.current) {
+          setAppVersion(version);
+        }
       } catch (error) {
         console.error("Failed to get app version", error);
       }
@@ -76,10 +88,12 @@ export default function RulesPage() {
     );
   }, [rules, search]);
 
-  const handleSaveConfig = async (nextConfig: AppConfig) => {
-    setConfig(nextConfig);
+  const handleSaveRules = async (nextRules: AppConfig["rules"]) => {
+    if (isMountedRef.current) {
+      setConfig((prev) => ({ ...prev, rules: nextRules }));
+    }
     try {
-      await API.saveConfig(nextConfig);
+      await API.saveRules(nextRules);
     } catch (error) {
       console.error("Failed to save config", error);
     }
@@ -96,32 +110,41 @@ export default function RulesPage() {
       }
       return rule;
     });
-    await handleSaveConfig({ ...config, rules: nextRules });
+    await handleSaveRules(nextRules);
   };
 
   const deleteRule = async (bundleId: string) => {
     const nextRules = rules.filter((rule) => rule.bundle_id !== bundleId);
-    await handleSaveConfig({ ...config, rules: nextRules });
+    await handleSaveRules(nextRules);
   };
 
   const rescanRules = async () => {
     setIsRescanning(true);
     try {
       const sources = await API.getSystemInputSources();
-      setInputSources(sources);
+      if (isMountedRef.current) {
+        setInputSources(sources);
+      }
+
       const generated = await API.scanAndPredict(sources);
-      const manualRules = rules.filter((rule) => !rule.is_ai_generated);
+
+      // Read latest persisted config to avoid overwriting general settings
+      // if user navigates away while rescan is still in progress.
+      const latestConfig = await API.getConfig();
+      const manualRules = latestConfig.rules.filter((rule) => !rule.is_ai_generated);
       const manualMap = new Map(manualRules.map((rule) => [rule.bundle_id, rule]));
 
       const merged = generated
         .filter((rule) => !manualMap.has(rule.bundle_id))
         .concat(manualRules);
 
-      await handleSaveConfig({ ...config, rules: merged });
+      await handleSaveRules(merged);
     } catch (error) {
       console.error("Rescan failed", error);
     } finally {
-      setIsRescanning(false);
+      if (isMountedRef.current) {
+        setIsRescanning(false);
+      }
     }
   };
 
@@ -156,11 +179,23 @@ export default function RulesPage() {
               "h-[36px] px-4 rounded-[10px]",
               "bg-[#155dfc] hover:bg-[#155dfc]/90",
               "text-white text-sm font-medium",
-              "shadow-none"
+              "shadow-none",
+              "disabled:bg-[#8cb2ff] disabled:text-white/90 disabled:cursor-not-allowed disabled:opacity-100",
+              isRescanning && "transition-none"
             )}
           >
-            <RefreshCw className={cn("mr-2 h-4 w-4", isRescanning && "animate-spin")} />
-            重新扫描
+            {isRescanning ? (
+              <span className="inline-flex items-center">
+                扫描中
+                <span className="ml-1 inline-flex items-center gap-1" aria-hidden>
+                  <span className="loading-dot" />
+                  <span className="loading-dot loading-dot-2" />
+                  <span className="loading-dot loading-dot-3" />
+                </span>
+              </span>
+            ) : (
+              "重新扫描"
+            )}
           </Button>
         </div>
 
