@@ -107,6 +107,7 @@ export const API = {
       model: "gpt-4o-mini",
       base_url: "https://api.openai.com/v1",
     } as LLMConfig,
+    rescanning: false,
   },
   /**
    * 检查辅助功能权限
@@ -161,6 +162,28 @@ export const API = {
       }));
     }
     return API._invoke('cmd_scan_and_predict', { inputSources });
+  },
+
+  /**
+   * 重新扫描并持久化规则（后台完成，避免页面切换导致结果丢失）
+   */
+  rescanAndSaveRules: async (): Promise<AppRule[]> => {
+    if (!API._isTauri()) {
+      API._mock.rescanning = true;
+      API._mock.rescanning = false;
+      return API._mock.config.rules;
+    }
+    return API._invoke('cmd_rescan_and_save_rules');
+  },
+
+  /**
+   * 查询规则重扫是否仍在后台进行
+   */
+  isRescanning: async (): Promise<boolean> => {
+    if (!API._isTauri()) {
+      return API._mock.rescanning;
+    }
+    return API._invoke('cmd_is_rescanning');
   },
 
   /**

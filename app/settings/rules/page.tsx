@@ -27,9 +27,10 @@ export default function RulesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRescanning, setIsRescanning] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
-  const isMountedRef = useRef(true);
+  const isMountedRef = useRef(false);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -38,13 +39,15 @@ export default function RulesPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [currentConfig, sources] = await Promise.all([
+        const [currentConfig, sources, rescanning] = await Promise.all([
           API.getConfig(),
           API.getSystemInputSources(),
+          API.isRescanning(),
         ]);
         if (!isMountedRef.current) return;
         setConfig(currentConfig);
         setInputSources(sources);
+        setIsRescanning(rescanning);
       } catch (error) {
         console.error("Failed to load rules data", error);
       } finally {
@@ -76,6 +79,32 @@ export default function RulesPage() {
 
     loadVersion();
   }, []);
+
+  useEffect(() => {
+    if (!isRescanning) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const rescanning = await API.isRescanning();
+        if (!isMountedRef.current) return;
+        if (rescanning) return;
+
+        setIsRescanning(false);
+
+        const [currentConfig, sources] = await Promise.all([
+          API.getConfig(),
+          API.getSystemInputSources(),
+        ]);
+        if (!isMountedRef.current) return;
+        setConfig(currentConfig);
+        setInputSources(sources);
+      } catch (error) {
+        console.error("Failed to sync rescan state", error);
+      }
+    }, 1200);
+
+    return () => clearInterval(timer);
+  }, [isRescanning]);
 
   const rules = useMemo(() => config.rules ?? [], [config]);
 
@@ -121,29 +150,38 @@ export default function RulesPage() {
   const rescanRules = async () => {
     setIsRescanning(true);
     try {
-      const sources = await API.getSystemInputSources();
+      const merged = await API.rescanAndSaveRules();
       if (isMountedRef.current) {
-        setInputSources(sources);
+        setConfig((prev) => ({ ...prev, rules: merged }));
+        const sources = await API.getSystemInputSources();
+        if (isMountedRef.current) {
+          setInputSources(sources);
+        }
       }
-
-      const generated = await API.scanAndPredict(sources);
-
-      // Read latest persisted config to avoid overwriting general settings
-      // if user navigates away while rescan is still in progress.
-      const latestConfig = await API.getConfig();
-      const manualRules = latestConfig.rules.filter((rule) => !rule.is_ai_generated);
-      const manualMap = new Map(manualRules.map((rule) => [rule.bundle_id, rule]));
-
-      const merged = generated
-        .filter((rule) => !manualMap.has(rule.bundle_id))
-        .concat(manualRules);
-
-      await handleSaveRules(merged);
     } catch (error) {
       console.error("Rescan failed", error);
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "";
+      if (
+        isMountedRef.current &&
+        message.includes("already in progress")
+      ) {
+        setIsRescanning(true);
+      }
     } finally {
       if (isMountedRef.current) {
-        setIsRescanning(false);
+        try {
+          const rescanning = await API.isRescanning();
+          if (isMountedRef.current) {
+            setIsRescanning(rescanning);
+          }
+        } catch {
+          setIsRescanning(false);
+        }
       }
     }
   };

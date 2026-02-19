@@ -75,6 +75,8 @@ fn main() {
             command::cmd_get_llm_config,
             command::cmd_check_llm_connection,
             command::cmd_scan_and_predict,
+            command::cmd_rescan_and_save_rules,
+            command::cmd_is_rescanning,
             command::cmd_check_permissions,
             command::cmd_request_permissions,
             command::cmd_open_system_settings,

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,7 @@ impl ConfigManager {
 pub struct AppState {
     pub config: Mutex<ConfigManager>,
     pub llm: Mutex<crate::llm::LLMClient>,
+    pub is_rescanning: AtomicBool,
 }
 
 impl AppState {
@@ -134,6 +136,7 @@ impl AppState {
         Self {
             config: Mutex::new(ConfigManager::new()),
             llm: Mutex::new(crate::llm::LLMClient::new()),
+            is_rescanning: AtomicBool::new(false),
         }
     }
 }

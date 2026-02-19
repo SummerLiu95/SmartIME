@@ -4,6 +4,10 @@ use crate::general_settings;
 use crate::input_source::{get_system_input_sources, select_input_source, InputSource};
 use crate::llm::LLMConfig;
 use crate::system_apps::SystemApp;
+use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::time::Duration;
 use tauri::{AppHandle, State};
 
 // Input Source Commands
@@ -97,6 +101,100 @@ pub fn cmd_get_llm_config(state: State<'_, AppState>) -> Result<LLMConfig> {
 pub async fn cmd_scan_and_predict(
     input_sources: Vec<InputSource>,
     state: State<'_, AppState>,
+) -> Result<Vec<AppRule>> {
+    predict_rules(input_sources, &state).await
+}
+
+#[tauri::command]
+pub async fn cmd_rescan_and_save_rules(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<AppRule>> {
+    if state
+        .is_rescanning
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(AppError::Config("Rescan is already in progress".to_string()));
+    }
+    let _rescan_guard = RescanGuard {
+        flag: &state.is_rescanning,
+    };
+
+    let input_sources = get_system_input_sources_on_main_thread(&app)?;
+    let generated = predict_rules(input_sources, &state).await?;
+
+    let mut manager = state
+        .config
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    let mut config = manager.get_config();
+
+    let manual_rules: Vec<AppRule> = config
+        .rules
+        .iter()
+        .filter(|rule| !rule.is_ai_generated)
+        .cloned()
+        .collect();
+    let manual_bundle_ids: HashSet<String> = manual_rules
+        .iter()
+        .map(|rule| rule.bundle_id.clone())
+        .collect();
+
+    let merged: Vec<AppRule> = generated
+        .into_iter()
+        .filter(|rule| !manual_bundle_ids.contains(&rule.bundle_id))
+        .chain(manual_rules.into_iter())
+        .collect();
+
+    config.rules = merged.clone();
+    manager.set_config(config)?;
+
+    Ok(merged)
+}
+
+#[tauri::command]
+pub fn cmd_is_rescanning(state: State<'_, AppState>) -> bool {
+    state.is_rescanning.load(Ordering::SeqCst)
+}
+
+struct RescanGuard<'a> {
+    flag: &'a std::sync::atomic::AtomicBool,
+}
+
+impl Drop for RescanGuard<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
+fn get_system_input_sources_on_main_thread(app: &AppHandle) -> Result<Vec<InputSource>> {
+    let (tx, rx) = mpsc::channel::<std::result::Result<Vec<InputSource>, String>>();
+
+    app.run_on_main_thread(move || {
+        let result = get_system_input_sources().map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    })
+    .map_err(|e| {
+        AppError::InputSource(format!(
+            "Failed to schedule input source scan on main thread: {}",
+            e
+        ))
+    })?;
+
+    let result = rx.recv_timeout(Duration::from_secs(5)).map_err(|e| {
+        AppError::InputSource(format!(
+            "Timed out waiting for main-thread input source scan: {}",
+            e
+        ))
+    })?;
+
+    result.map_err(AppError::InputSource)
+}
+
+async fn predict_rules(
+    input_sources: Vec<InputSource>,
+    state: &State<'_, AppState>,
 ) -> Result<Vec<AppRule>> {
     let installed_apps = crate::system_apps::get_installed_apps()?;
     let target_apps = filter_target_apps(installed_apps);
