@@ -23,7 +23,7 @@ pub struct GeneralSettings {
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
-            auto_start: true,
+            auto_start: false,
             hide_dock_icon: false,
         }
     }
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn test_general_settings_default() {
         let defaults = GeneralSettings::default();
-        assert!(defaults.auto_start);
+        assert!(!defaults.auto_start);
         assert!(!defaults.hide_dock_icon);
     }
 

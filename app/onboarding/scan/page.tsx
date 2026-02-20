@@ -53,7 +53,7 @@ export default function ScanOnboardingPage() {
           global_switch: true,
           default_input: "keep",
           general: {
-            auto_start: true,
+            auto_start: false,
             hide_dock_icon: false,
           },
           rules: generatedRules,

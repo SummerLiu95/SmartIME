@@ -11,8 +11,25 @@ const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray/32x32.png");
 
 pub fn apply_general_settings(app: &AppHandle, settings: &GeneralSettings) -> Result<()> {
     apply_dock_visibility(app, settings.hide_dock_icon)?;
-    ensure_tray_icon(app)?;
+    sync_tray_icon_visibility(app, settings.hide_dock_icon)?;
     apply_auto_start(app, settings.auto_start)?;
+    Ok(())
+}
+
+pub fn apply_general_settings_delta(
+    app: &AppHandle,
+    previous: &GeneralSettings,
+    next: &GeneralSettings,
+) -> Result<()> {
+    if previous.hide_dock_icon != next.hide_dock_icon {
+        apply_dock_visibility(app, next.hide_dock_icon)?;
+        sync_tray_icon_visibility(app, next.hide_dock_icon)?;
+    }
+
+    if previous.auto_start != next.auto_start {
+        apply_auto_start(app, next.auto_start)?;
+    }
+
     Ok(())
 }
 
@@ -31,12 +48,12 @@ fn apply_dock_visibility(app: &AppHandle, hide_dock_icon: bool) -> Result<()> {
         .map_err(|e| AppError::Config(format!("Failed to update dock visibility: {}", e)))
 }
 
-fn ensure_tray_icon(app: &AppHandle) -> Result<()> {
+fn sync_tray_icon_visibility(app: &AppHandle, visible: bool) -> Result<()> {
     #[cfg(desktop)]
     {
         use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-        if app.tray_by_id(TRAY_ICON_ID).is_none() {
+        if app.tray_by_id(TRAY_ICON_ID).is_none() && visible {
             let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
                 AppError::Config(format!("Failed to load tray icon bytes: {}", e))
             })?;
@@ -64,10 +81,11 @@ fn ensure_tray_icon(app: &AppHandle) -> Result<()> {
                     AppError::Config(format!("Failed to create tray icon: {}", e))
                 })?;
         }
+
         if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
             tray
-                .set_visible(true)
-                .map_err(|e| AppError::Config(format!("Failed to show tray icon: {}", e)))?;
+                .set_visible(visible)
+                .map_err(|e| AppError::Config(format!("Failed to update tray visibility: {}", e)))?;
         }
 
         Ok(())
@@ -99,10 +117,10 @@ fn apply_auto_start(app: &AppHandle, auto_start: bool) -> Result<()> {
             fs::write(&plist_path, plist_content).map_err(|e| {
                 AppError::Config(format!("Failed to write LaunchAgent plist: {}", e))
             })?;
-            enable_launch_agent(&plist_path)?;
         } else {
             if plist_path.exists() {
-                disable_launch_agent(&plist_path)?;
+                // Best-effort unload to avoid lingering managed state.
+                let _ = disable_launch_agent(&plist_path);
                 let _ = fs::remove_file(&plist_path);
             }
         }
@@ -149,24 +167,6 @@ fn build_launch_agent_plist(label: &str, exec_path: &Path) -> String {
         label = label,
         exec = exec_path.display()
     )
-}
-
-#[cfg(target_os = "macos")]
-fn enable_launch_agent(plist_path: &Path) -> Result<()> {
-    let uid = current_uid()?;
-    let target = format!("gui/{}", uid);
-
-    if run_launchctl(["bootstrap", &target, plist_path.to_string_lossy().as_ref()])? {
-        return Ok(());
-    }
-
-    if run_launchctl(["load", "-w", plist_path.to_string_lossy().as_ref()])? {
-        return Ok(());
-    }
-
-    Err(AppError::Config(
-        "Failed to enable auto-start via launchctl".to_string(),
-    ))
 }
 
 #[cfg(target_os = "macos")]

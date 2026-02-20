@@ -42,7 +42,7 @@ pub fn cmd_save_config(
     let previous = manager.get_config();
 
     if previous.general != config.general {
-        general_settings::apply_general_settings(&app, &config.general)?;
+        general_settings::apply_general_settings_delta(&app, &previous.general, &config.general)?;
     }
 
     manager.set_config(config)

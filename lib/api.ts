@@ -68,7 +68,7 @@ export const API = {
       global_switch: true,
       default_input: "keep" as const,
       general: {
-        auto_start: true,
+        auto_start: false,
         hide_dock_icon: false,
       },
       rules: [
