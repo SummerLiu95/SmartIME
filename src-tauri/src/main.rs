@@ -8,6 +8,7 @@ mod general_settings;
 mod input_source;
 mod llm;
 mod observer;
+mod single_instance;
 mod system_apps;
 
 use config::AppState;
@@ -15,7 +16,11 @@ use tauri::Manager;
 use tauri::WindowEvent;
 
 fn main() {
-    tauri::Builder::default()
+    if !single_instance::prepare_primary_instance() {
+        return;
+    }
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_log::Builder::default().build())
         .manage(AppState::new()) // 注入全局状态
@@ -47,6 +52,8 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             let state = app.state::<AppState>();
+
+            single_instance::start_activation_listener(handle.clone());
 
             if let Ok(manager) = state.config.lock() {
                 let config = manager.get_config();
@@ -81,6 +88,19 @@ fn main() {
             command::cmd_request_permissions,
             command::cmd_open_system_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            single_instance::focus_main_window(app_handle);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = app_handle;
+            let _ = event;
+        }
+    });
 }
