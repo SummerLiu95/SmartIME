@@ -57,17 +57,16 @@ fn main() {
 
             if let Ok(manager) = state.config.lock() {
                 let config = manager.get_config();
-                if let Err(err) =
-                    general_settings::apply_general_settings(&handle, &config.general)
+                if let Err(err) = general_settings::apply_general_settings(&handle, &config.general)
                 {
                     eprintln!("Failed to apply general settings on startup: {}", err);
                 }
             }
-            
+
             // 启动应用监听
             #[cfg(target_os = "macos")]
             observer::setup_observer(handle);
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

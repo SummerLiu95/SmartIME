@@ -55,7 +55,7 @@ pub struct ConfigManager {
     config: AppConfig,
     file_path: PathBuf,
     // 内存缓存优化查询
-    rule_map: HashMap<String, String>, 
+    rule_map: HashMap<String, String>,
 }
 
 impl ConfigManager {
@@ -63,14 +63,14 @@ impl ConfigManager {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("smartime");
-        
+
         if !config_dir.exists() {
             let _ = fs::create_dir_all(&config_dir);
         }
 
         let file_path = config_dir.join("config.json");
         let config = Self::load_from_file(&file_path).unwrap_or_default();
-        
+
         let mut manager = Self {
             config: config.clone(),
             file_path,
@@ -98,7 +98,8 @@ impl ConfigManager {
     fn rebuild_cache(&mut self) {
         self.rule_map.clear();
         for rule in &self.config.rules {
-            self.rule_map.insert(rule.bundle_id.clone(), rule.preferred_input.clone());
+            self.rule_map
+                .insert(rule.bundle_id.clone(), rule.preferred_input.clone());
         }
     }
 

@@ -31,7 +31,7 @@ static REGISTER_OBSERVER_CLASS: Once = Once::new();
 pub fn setup_observer(app_handle: AppHandle) {
     // 创建一个 Channel
     let (tx, rx) = std::sync::mpsc::channel::<AppFocusedEvent>();
-    
+
     // 保存 Sender 到全局变量
     if APP_EVENT_TX.set(tx).is_err() {
         eprintln!("Failed to set global sender for app observer");
@@ -82,13 +82,14 @@ pub fn setup_observer(app_handle: AppHandle) {
         // 注册 Objective-C 类
         REGISTER_OBSERVER_CLASS.call_once(|| {
             let superclass = class!(NSObject);
-            let mut decl = ClassDecl::new("RustAppObserver", superclass).expect("Failed to declare class");
+            let mut decl =
+                ClassDecl::new("RustAppObserver", superclass).expect("Failed to declare class");
 
             decl.add_method(
                 sel!(appActivated:),
                 app_activated_impl as extern "C" fn(&Object, Sel, id),
             );
-            
+
             decl.register();
         });
 
@@ -97,9 +98,9 @@ pub fn setup_observer(app_handle: AppHandle) {
         // 实例化 Observer
         let observer_class = class!(RustAppObserver);
         let observer: id = msg_send![observer_class, new];
-        
+
         // 故意泄漏 observer 引用，防止被回收 (它是单例)
-        let _ = Box::leak(Box::new(observer)); 
+        let _ = Box::leak(Box::new(observer));
 
         // 获取 NotificationCenter
         let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
@@ -107,9 +108,10 @@ pub fn setup_observer(app_handle: AppHandle) {
 
         // 添加观察者
         // 使用 NSString 创建通知名称，避免链接错误
-        let notification_name = NSString::alloc(nil).init_str("NSWorkspaceDidActivateApplicationNotification");
+        let notification_name =
+            NSString::alloc(nil).init_str("NSWorkspaceDidActivateApplicationNotification");
 
-        let _: () = msg_send![notification_center, 
+        let _: () = msg_send![notification_center,
             addObserver: observer
             selector: sel!(appActivated:)
             name: notification_name
@@ -142,7 +144,8 @@ fn apply_input_source_for_bundle_on_main_thread(
     schedule_handle
         .run_on_main_thread(move || {
             let result = (|| -> Result<Option<String>, String> {
-                let Some(target_input) = resolve_target_input_source(&resolve_handle, &bundle_id) else {
+                let Some(target_input) = resolve_target_input_source(&resolve_handle, &bundle_id)
+                else {
                     return Ok(None);
                 };
 
@@ -171,7 +174,7 @@ extern "C" fn app_activated_impl(_this: &Object, _cmd: Sel, notification: id) {
         let user_info: id = msg_send![notification, userInfo];
         let key = NSString::alloc(nil).init_str("NSWorkspaceApplicationKey");
         let app: id = msg_send![user_info, objectForKey: key];
-        
+
         if app != nil {
             let bundle_id: id = msg_send![app, bundleIdentifier];
             let app_name: id = msg_send![app, localizedName];

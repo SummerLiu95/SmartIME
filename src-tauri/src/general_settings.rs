@@ -54,9 +54,8 @@ fn sync_tray_icon_visibility(app: &AppHandle, visible: bool) -> Result<()> {
         use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
         if app.tray_by_id(TRAY_ICON_ID).is_none() && visible {
-            let icon = Image::from_bytes(TRAY_ICON_BYTES).map_err(|e| {
-                AppError::Config(format!("Failed to load tray icon bytes: {}", e))
-            })?;
+            let icon = Image::from_bytes(TRAY_ICON_BYTES)
+                .map_err(|e| AppError::Config(format!("Failed to load tray icon bytes: {}", e)))?;
             TrayIconBuilder::with_id(TRAY_ICON_ID)
                 .icon(icon)
                 .tooltip("SmartIME")
@@ -77,15 +76,13 @@ fn sync_tray_icon_visibility(app: &AppHandle, visible: bool) -> Result<()> {
                     }
                 })
                 .build(app)
-                .map_err(|e| {
-                    AppError::Config(format!("Failed to create tray icon: {}", e))
-                })?;
+                .map_err(|e| AppError::Config(format!("Failed to create tray icon: {}", e)))?;
         }
 
         if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
-            tray
-                .set_visible(visible)
-                .map_err(|e| AppError::Config(format!("Failed to update tray visibility: {}", e)))?;
+            tray.set_visible(visible).map_err(|e| {
+                AppError::Config(format!("Failed to update tray visibility: {}", e))
+            })?;
         }
 
         Ok(())

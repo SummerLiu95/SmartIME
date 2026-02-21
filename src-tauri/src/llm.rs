@@ -199,7 +199,10 @@ Just output the ID string of the selected input source. Do not output any other 
             temperature: 0.1, // 低温度以获得确定性结果
         };
 
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
 
         let resp = self
             .client
@@ -216,7 +219,7 @@ Just output the ID string of the selected input source. Do not output any other 
         }
 
         let completion: ChatCompletionResponse = resp.json().await?;
-        
+
         if let Some(choice) = completion.choices.first() {
             let selected_id = choice.message.content.trim().to_string();
             // 验证返回的 ID 是否在列表中
@@ -225,7 +228,10 @@ Just output the ID string of the selected input source. Do not output any other 
             } else {
                 // 如果返回的 ID 不存在，尝试模糊匹配或回退
                 // 这里简单处理：如果找不到，报错
-                Err(AppError::Llm(format!("AI returned invalid ID: {}", selected_id)))
+                Err(AppError::Llm(format!(
+                    "AI returned invalid ID: {}",
+                    selected_id
+                )))
             }
         } else {
             Err(AppError::Llm("No response from AI".to_string()))
@@ -242,7 +248,7 @@ mod tests {
         // 设置环境变量进行测试
         std::env::set_var("LLM_API_KEY", "test-key");
         std::env::set_var("LLM_MODEL", "test-model");
-        
+
         let config = LLMClient::load_from_env();
         assert!(config.is_some());
         let c = config.unwrap();
