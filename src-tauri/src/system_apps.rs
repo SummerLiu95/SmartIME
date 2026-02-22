@@ -117,7 +117,7 @@ mod tests {
         assert!(!apps.is_empty(), "Should find at least one app");
 
         // Check for common apps (optional, but good for verification)
-        let has_finder = apps.iter().any(|app| app.bundle_id == "com.apple.finder");
+        let _has_finder = apps.iter().any(|app| app.bundle_id == "com.apple.finder");
         let has_safari = apps.iter().any(|app| app.bundle_id == "com.apple.Safari");
 
         // Finder might be in /System/Library/CoreServices, not scanned by default in /Applications

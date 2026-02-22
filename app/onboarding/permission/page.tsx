@@ -72,22 +72,23 @@ export default function OnboardingPage() {
         </div>
 
         {/* Step Guide Card */}
-        <div
+        <Button
+          variant="ghost"
           className={cn(
-            "mt-6 flex w-full flex-col justify-between",
+            "mt-6 w-full h-auto whitespace-normal items-center justify-between",
             "rounded-[14px] border border-[#e4e4e7] dark:border-zinc-800",
             "bg-[#fafafa] dark:bg-zinc-800/50",
-            "p-4 pr-11 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]",
-            "transition-colors cursor-pointer",
+            "p-4 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)]",
+            "hover:bg-[#fafafa] dark:hover:bg-zinc-800/50", // Prevent default ghost hover bg change if needed, or let it blend
             "hover:border-blue-200 dark:hover:border-blue-800",
-            "relative" // For absolute positioning of ChevronRight
+            "transition-colors"
           )}
           onClick={handleTriggerPermissionPrompt}
           onMouseEnter={() => setIsHoveringGuide(true)}
           onMouseLeave={() => setIsHoveringGuide(false)}
         >
           {/* Step 1: Settings Path */}
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 text-left">
              <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#e4e4e7] dark:bg-zinc-700">
                 <Settings className="h-4 w-4 text-zinc-600 dark:text-zinc-300" />
              </div>
@@ -98,8 +99,8 @@ export default function OnboardingPage() {
                     </span>
                 </div>
                 <div className="flex items-center h-5">
-                    <span className="text-sm text-[#71717b] dark:text-[#a1a1aa] leading-5 tracking-[-0.15px]">
-                        点击此卡片触发系统授权弹窗。
+                    <span className="text-sm text-[#71717b] dark:text-[#a1a1aa] leading-5 tracking-[-0.15px] font-normal">
+                        点击此按钮触发系统授权弹窗。
                     </span>
                 </div>
              </div>
@@ -107,12 +108,12 @@ export default function OnboardingPage() {
           
           {/* External Link Icon Hint */}
           <motion.div 
-             className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400"
+             className="text-zinc-400 shrink-0 ml-4"
              animate={{ x: isHoveringGuide ? 3 : 0 }}
           >
              <ChevronRight className="h-5 w-5" />
           </motion.div>
-        </div>
+        </Button>
 
         {/* Action Button */}
         <div className="mt-6 w-full">
@@ -121,7 +122,7 @@ export default function OnboardingPage() {
               "w-full h-[68px] rounded-[10px]",
               "bg-[#155dfc] hover:bg-[#155dfc]/90",
               "text-white text-sm font-medium tracking-[-0.15px]",
-              "flex items-center justify-between px-8 py-[25px]",
+              "flex items-center justify-between px-4 py-[25px]",
               permissionStatus === "granted" && "bg-green-600 hover:bg-green-700",
               permissionStatus === "denied" && "bg-red-600 hover:bg-red-700"
             )}
@@ -135,22 +136,28 @@ export default function OnboardingPage() {
             disabled={permissionStatus === "checking"}
           >
             {permissionStatus === "checking" ? (
-              <span className="flex items-center gap-2">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                  className="h-4 w-4 border-2 border-white border-t-transparent rounded-full"
-                />
+              <span className="flex items-center gap-3">
+                <div className="flex w-6 justify-center shrink-0">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                    className="h-4 w-4 border-2 border-white border-t-transparent rounded-full"
+                  />
+                </div>
                 检查中...
               </span>
             ) : permissionStatus === "granted" ? (
-              <span className="flex items-center gap-2">
-                 <CheckCircle className="h-4 w-4" />
-                 已获得授权
+              <span className="flex items-center gap-3">
+                 <div className="flex w-6 justify-center shrink-0">
+                   <CheckCircle className="h-4 w-4" />
+                 </div>
+                 已获得授权，继续
               </span>
             ) : permissionStatus === "denied" ? (
-              <span className="flex items-center gap-2">
-                 <AlertCircle className="h-4 w-4" />
+              <span className="flex items-center gap-3">
+                 <div className="flex w-6 justify-center shrink-0">
+                   <AlertCircle className="h-4 w-4" />
+                 </div>
                  未检测到权限，点击重试
               </span>
             ) : (
@@ -158,7 +165,9 @@ export default function OnboardingPage() {
             )}
             
             {permissionStatus !== "checking" && (
-                <ChevronRight className="h-4 w-4 opacity-50" />
+                <div className="text-white/50 shrink-0 ml-4">
+                  <ChevronRight className="h-5 w-5" />
+                </div>
             )}
           </Button>
         </div>
