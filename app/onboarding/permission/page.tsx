@@ -24,12 +24,7 @@ export default function OnboardingPage() {
     if (!silent) setPermissionStatus("checking");
     
     try {
-      let granted = await API.checkPermissions();
-      if (!granted && !silent) {
-        await API.requestPermissions();
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        granted = await API.checkPermissions();
-      }
+      const granted = await API.checkPermissions();
 
       if (granted) {
         setPermissionStatus("granted");
@@ -42,22 +37,11 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleOpenSettings = async () => {
+  const handleTriggerPermissionPrompt = async () => {
     try {
-      setPermissionStatus("checking");
       await API.requestPermissions();
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      const granted = await API.checkPermissions();
-      if (granted) {
-        setPermissionStatus("granted");
-        return;
-      }
-
-      setPermissionStatus("denied");
-      await API.openSystemSettings();
     } catch (error) {
-      console.error("Failed to open settings:", error);
-      setPermissionStatus("denied");
+      console.error("Failed to request permissions:", error);
     }
   };
 
@@ -98,7 +82,7 @@ export default function OnboardingPage() {
             "hover:border-blue-200 dark:hover:border-blue-800",
             "relative" // For absolute positioning of ChevronRight
           )}
-          onClick={handleOpenSettings}
+          onClick={handleTriggerPermissionPrompt}
           onMouseEnter={() => setIsHoveringGuide(true)}
           onMouseLeave={() => setIsHoveringGuide(false)}
         >
@@ -115,7 +99,7 @@ export default function OnboardingPage() {
                 </div>
                 <div className="flex items-center h-5">
                     <span className="text-sm text-[#71717b] dark:text-[#a1a1aa] leading-5 tracking-[-0.15px]">
-                        点击此卡片先触发系统授权弹窗，若失败再手动前往设置勾选。
+                        点击此卡片触发系统授权弹窗。
                     </span>
                 </div>
              </div>

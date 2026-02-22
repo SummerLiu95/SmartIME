@@ -302,10 +302,7 @@ export default function RulesPage() {
         {/* Bottom Indicator */}
         <div className="flex items-center justify-between px-6 h-8 border-t border-[#f4f4f5] dark:border-zinc-800/50 text-xs text-[#a1a1aa]">
           <span>{rules.length} 个受管应用</span>
-          <div className="flex items-center gap-1">
-            <span>{appVersion ? `v${appVersion}` : "v--"}</span>
-            <span className="text-[#a1a1aa]">↗</span>
-          </div>
+          <span>{appVersion ? `v${appVersion}` : "v--"}</span>
         </div>
       </div>
     </AppLayout>

@@ -176,7 +176,7 @@ export default function ScanOnboardingPage() {
           >
             <span>
               {phase === "generated"
-                ? "开启 SmartIME之旅"
+                ? "开启 SmartIME 之旅"
                 : phase === "error"
                   ? "重试扫描"
                   : "处理中..."}
