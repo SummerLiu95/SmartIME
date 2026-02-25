@@ -126,3 +126,53 @@ Then edit `.env.llm` with your actual API credentials:
 - Supports distribution via Homebrew Cask
 - Uses static export configuration for Next.js integration with Tauri
 - GitHub Actions configured for automated builds and releases
+
+## Agent Rulebook: Tauri Release Lessons (2026-02)
+
+### 1) Documentation Ownership Rules
+- When implementing or fixing behavior, always update the correct document:
+  - `REQUIREMENTS.md`: external behavior, UX constraints, acceptance criteria.
+  - `TECHNICAL_SPEC.md`: technical root cause, implementation detail, and prevention lessons.
+  - `AGENTS.md` / `CLAUDE.md`: reusable agent execution rules.
+- If behavior changed but requirements are not updated, treat task as incomplete.
+
+### 2) Bug-Fix Recording Template (Mandatory)
+- For each substantial bug fix, capture:
+  - `Symptom`
+  - `Trigger scenario`
+  - `Root cause class`
+  - `Implemented fix`
+  - `Regression checks`
+- Store this in `TECHNICAL_SPEC.md` under the release knowledge section.
+
+### 3) Permission Flow Rules (macOS Accessibility)
+- Keep permission request and permission verification as separate actions.
+- Guide action may trigger native authorization request only.
+- Retry/check action may verify current permission state only.
+- Do not trigger native prompt and open system settings automatically in one action.
+
+### 4) Runtime Safety Rules
+- Do not use `unwrap`/`expect` in runtime async paths related to scan/rescan/save/lifecycle.
+- Rescan must be single in-flight, duplicate-safe, and recoverable on error.
+- UI loading state must reflect backend task lifecycle even when view navigation changes.
+
+### 5) State Synchronization Rules
+- Every onboarding scan and manual rescan must re-sync from system truth:
+  - installed apps from `/Applications` and `~/Applications`
+  - enabled input sources from macOS APIs
+- Prune stale input sources from rule options and persisted rule data.
+- Do not treat scan results as append-only data.
+
+### 6) Window and Lifecycle Rules
+- `hideDockIcon` toggle must not close the main window immediately.
+- In hide-Dock mode, closing window keeps app alive in menu bar.
+- Dock/tray activation must reopen/focus the existing main window in the same process.
+- `autoStart` and `hideDockIcon` must remain independent settings.
+
+### 7) Identity and Distribution Rules
+- Keep metadata aligned across:
+  - `src-tauri/Cargo.toml` package name
+  - `src-tauri/tauri.conf.json` product name and identifier
+  - bundled `.app` metadata
+- Validate permission/login-item/dock behavior on bundled app builds before release decisions.
+- Dev runtime (`bun tauri dev`) is not sufficient evidence for release-level OS integration behavior.

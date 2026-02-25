@@ -51,3 +51,33 @@ SmartIME is a macOS app with both a main window and a menu bar indicator, built 
 - Prefer existing patterns and components.
 - Avoid introducing new dependencies unless clearly justified.
 - Never commit secrets or `.env.llm`.
+
+## Agent Rule Set: Post-Release Guardrails (2026-02)
+
+### Documentation Classification Contract
+- For every user-visible bug fix or optimization, update docs by purpose:
+  - `REQUIREMENTS.md`: user-facing behavior and acceptance criteria.
+  - `TECHNICAL_SPEC.md`: root cause, implementation strategy, and prevention lessons.
+  - `AGENTS.md`/`CLAUDE.md`: actionable engineering rules for future agents.
+- Do not mix implementation internals into requirements text, and do not leave user-facing behavior only in technical notes.
+
+### Tauri/macOS Safety Rules
+- Keep permission request and permission check as separate actions in both UI and command wiring.
+- Never combine native authorization prompt and system settings navigation in the same click action.
+- Validate TCC permission behavior, login-item behavior, and Dock/tray lifecycle on bundled app builds, not dev runtime alone.
+- Keep app identity consistent across Rust package metadata, Tauri config, and packaged app metadata.
+
+### Runtime Stability Rules
+- Avoid `unwrap`/`expect` in runtime async flows (scan, rescan, save, lifecycle transitions).
+- Treat scan/rescan as single in-flight tasks with duplicate trigger suppression.
+- Persist state only after guarded merge/validation, and always return recoverable errors to UI.
+
+### Data Consistency Rules
+- On every onboarding scan and manual rescan, re-sync installed apps and input sources from system truth.
+- Remove stale input-source options when system input methods are removed.
+- Prevent helper/non-selectable input-source entries from appearing in rule dropdowns.
+
+### Window/Lifecycle Rules
+- `hideDockIcon` toggle must not close settings window immediately.
+- `autoStart` and `hideDockIcon` must remain independent settings.
+- Dock and tray reactivation should always restore the existing settings window in a single running process.

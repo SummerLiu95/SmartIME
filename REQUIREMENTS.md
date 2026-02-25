@@ -18,7 +18,8 @@ Through a "Zero Configuration" concept, it uses AI to assist in predicting the i
 graph TD
     A[User Starts SmartIME] --> B{Check System Permissions}
     B -- No Permission --> C[Show Guide Page: Request Accessibility/Input Monitoring Permission]
-    C --> D[User Grants Permission in System Settings]
+    C --> C1[User Clicks Guide Card and Triggers Native Permission Prompt]
+    C1 --> D[User Grants Permission in System Settings]
     D --> B
     B -- Permission OK --> E{Check Local Config}
     E -- Exists --> F[Open Main Settings Window]
@@ -79,6 +80,39 @@ This flow represents a **returning user** (not the first launch). All required p
 5.  Configuration is automatically saved and takes effect immediately.
 6.  Settings in the main interface are for rule management and general system behavior only.
 
+### 2.5 Permission Interaction Constraints (Onboarding)
+
+To avoid duplicate or confusing permission behavior, onboarding permission actions are split strictly:
+
+1.  **Guide card action** (e.g. `Settings > Privacy & Security > Accessibility`):
+    *   Only triggers native Accessibility authorization prompt.
+    *   Must not auto-open the Accessibility settings page in the same action.
+2.  **Retry/check action** (e.g. `Permission not detected, click to retry`):
+    *   Only performs permission status check (`check_permissions`).
+    *   Must not trigger native authorization prompt.
+3.  If authorization prompt does not appear or user dismissed it, user may manually open System Settings as fallback guidance.
+
+### 2.6 Interaction Optimizations (Captured from Regression Testing)
+
+The following UI/interaction changes are part of the finalized product behavior and must be preserved:
+
+1.  **Onboarding / Permission page**
+    *   Permission guide card triggers native authorization request only.
+    *   Retry/check button performs permission check only.
+    *   Authorization request and permission check must not implicitly trigger each other.
+
+2.  **Main settings / Rules panel**
+    *   "Rescan" loading state must remain accurate until task completion.
+    *   If user navigates away during rescan, scanning continues in background and commits results.
+    *   Returning to Rules panel during in-flight rescan must still show loading state.
+    *   Post-onboarding redirect to Rules must not leave the view in an infinite loading state.
+
+3.  **Main settings / General settings panel**
+    *   Toggling "Hide Dock Icon" must not auto-close the main settings window.
+    *   When hide-Dock mode is enabled and user closes the window, app remains alive in menu bar.
+    *   Reactivation via Dock icon or tray icon should be equivalent: open existing main settings window in the same running process.
+    *   "Start at login" and "Hide Dock Icon" are independent settings and must not implicitly alter each other.
+
 ## 3. Functional Requirements
 
 ### 3.1 Core Functions
@@ -105,13 +139,31 @@ This flow represents a **returning user** (not the first launch). All required p
     *   Provide a visual list allowing users to search applications, and delete rules.
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
-*   **FR-07 Default Policy**: Allow setting default behavior for "Unmatched Applications" (Keep Unchanged / Force English).
+*   **FR-07 Unmatched App Policy**:
+    *   Unmatched applications use fixed behavior: keep current input source unchanged.
+    *   No separate user-facing setting for unmatched application policy is required in General Settings.
 *   **FR-08 General Settings**:
     *   Provide toggles for **Auto-start at login** and **Hide Dock icon**.
     *   Changes must persist across restarts and take effect at the system level.
 *   **FR-09 Manual Rescan**:
-    *   Provide a "重新扫描" action in the Rules view to refresh installed app list and re-run AI prediction, and in this process, the input method switching function is temporarily paused.
+    *   Provide a "Rescan" action in the Rules view (localized label may be `重新扫描`) to refresh installed app list and re-run AI prediction, and in this process, the input method switching function is temporarily paused.
     *   Must show a loading state and prevent duplicate triggers while scanning.
+    *   If user switches to another settings panel during scanning, scan must continue in background and final result must still be committed.
+    *   When user returns to Rules panel before completion, loading state must still be visible until scan is done.
+*   **FR-10 Permission Action Separation**:
+    *   Onboarding guide card triggers authorization request only.
+    *   Retry/check button performs permission verification only.
+    *   These two actions must not invoke each other implicitly.
+*   **FR-11 Scan Result Consistency**:
+    *   In both first-run onboarding scan and later manual rescans, the in-app application list must reflect current installed applications in `/Applications` and `~/Applications`.
+    *   In both first-run onboarding scan and later manual rescans, the in-app input method list must reflect current enabled system input sources.
+    *   Input methods removed from the system must be pruned from in-app selectable options and rule data.
+*   **FR-12 Single-Instance Reactivation Semantics**:
+    *   All app entry points (launch, Dock icon, tray icon, login-item startup) must resolve to one running process.
+    *   If process already exists, reactivation should focus/open the existing main settings window instead of spawning duplicate UI/process representations.
+*   **FR-13 General Settings Independence**:
+    *   `autoStart` and `hideDockIcon` must be implemented as independent persisted preferences.
+    *   Updating one setting must not implicitly mutate the other setting.
 
 ## 4. Non-functional Requirements
 
