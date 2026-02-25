@@ -142,3 +142,54 @@ jobs:
           path: |
             ${{ steps.assets.outputs.dmg_path }}
             ${{ steps.assets.outputs.checksum_file }}
+
+      - name: Update Homebrew Cask
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # 配置 Git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 变量准备
+          VERSION="${{ steps.versions.outputs.version }}"
+          SHA256="${{ steps.assets.outputs.sha256 }}"
+          REPO_OWNER="${{ github.repository_owner }}"
+          TAP_REPO="homebrew-smartime"
+          CASK_FILE="Casks/smartime.rb"
+
+          # 检查 Token 是否存在
+          if [[ -z "${GH_TOKEN}" ]]; then
+             echo "Warning: GH_PERSONAL_ACCESS_TOKEN is not set. Skipping Homebrew Cask update."
+             exit 0
+          fi
+
+          # Clone Tap 仓库
+          echo "Cloning ${REPO_OWNER}/${TAP_REPO}..."
+          git clone "https://${GH_TOKEN}@github.com/${REPO_OWNER}/${TAP_REPO}.git"
+          cd "${TAP_REPO}"
+
+          # 检查 Cask 文件是否存在
+          if [[ ! -f "$CASK_FILE" ]]; then
+            echo "Error: $CASK_FILE not found in $TAP_REPO"
+            exit 1
+          fi
+
+          # 更新版本和 SHA256 (macOS sed 需要备份后缀或空字符串，这里使用备份后缀方式以兼容)
+          sed -i.bak -E "s/version \"[^\"]+\"/version \"${VERSION}\"/" "$CASK_FILE"
+          sed -i.bak -E "s/sha256 \"[0-9a-f]+\"/sha256 \"${SHA256}\"/" "$CASK_FILE"
+          rm "${CASK_FILE}.bak"
+
+          # 检查是否有变更
+          if git diff --quiet; then
+            echo "No changes detected in Cask file."
+          else
+            # 提交并推送
+            git add "$CASK_FILE"
+            git commit -m "Update smartime cask to ${VERSION}"
+            git push origin HEAD:main
+            echo "Successfully updated Homebrew Cask to ${VERSION}"
+          fi
