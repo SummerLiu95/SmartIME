@@ -1,0 +1,144 @@
+name: Release DMG
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-universal-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate release version consistency
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if [[ "$TAG" == "$VERSION" ]]; then
+            echo "Tag must start with v (for example: v0.1.0)."
+            exit 1
+          fi
+
+          TAURI_VERSION="$(sed -n 's/^[[:space:]]*\"version\": \"\([^\"]*\)\",$/\1/p' src-tauri/tauri.conf.json | head -n 1)"
+          PACKAGE_VERSION="$(sed -n 's/^[[:space:]]*\"version\": \"\([^\"]*\)\",$/\1/p' package.json | head -n 1)"
+          CARGO_VERSION="$(sed -n 's/^version = \"\(.*\)\"$/\1/p' src-tauri/Cargo.toml | head -n 1)"
+
+          if [[ "$VERSION" != "$TAURI_VERSION" || "$VERSION" != "$PACKAGE_VERSION" || "$VERSION" != "$CARGO_VERSION" ]]; then
+            echo "Version mismatch detected."
+            echo "tag: $VERSION"
+            echo "tauri: $TAURI_VERSION"
+            echo "package: $PACKAGE_VERSION"
+            echo "cargo: $CARGO_VERSION"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal DMG
+        run: bun tauri build --target universal-apple-darwin
+
+      - name: Prepare release assets
+        id: assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.versions.outputs.version }}"
+          DMG_PATH="src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_${VERSION}_universal.dmg"
+
+          if [[ ! -f "$DMG_PATH" ]]; then
+            echo "DMG not found: $DMG_PATH"
+            exit 1
+          fi
+
+          SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+          CHECKSUM_FILE="SmartIME_${VERSION}_universal.dmg.sha256"
+          echo "${SHA256}  SmartIME_${VERSION}_universal.dmg" > "$CHECKSUM_FILE"
+
+          {
+            echo "dmg_path=$DMG_PATH"
+            echo "checksum_file=$CHECKSUM_FILE"
+            echo "sha256=$SHA256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.versions.outputs.version }}"
+          SHA256="${{ steps.assets.outputs.sha256 }}"
+          cat <<EOF > RELEASE_NOTES.md
+          ## SmartIME ${VERSION}
+
+          ### Assets
+          - SmartIME_${VERSION}_universal.dmg
+          - SmartIME_${VERSION}_universal.dmg.sha256
+
+          ### Homebrew Cask fields
+          - URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SmartIME_${VERSION}_universal.dmg
+          - SHA256: ${SHA256}
+          EOF
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SmartIME ${{ steps.versions.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.assets.outputs.dmg_path }}
+            ${{ steps.assets.outputs.checksum_file }}
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartime-${{ steps.versions.outputs.version }}-dmg
+          path: |
+            ${{ steps.assets.outputs.dmg_path }}
+            ${{ steps.assets.outputs.checksum_file }}

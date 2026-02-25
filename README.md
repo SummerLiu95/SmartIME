@@ -61,10 +61,23 @@ bun tauri dev
 ## Build
 
 ```bash
-bun tauri build
+bun tauri build --target universal-apple-darwin
 ```
 
-Build outputs are generated under `src-tauri/target/release/bundle/`.
+DMG output is generated at:
+
+`src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_<version>_universal.dmg`
+
+## Release Automation (Git Tag)
+
+1. Update and commit version metadata in:
+   - `package.json`
+   - `src-tauri/Cargo.toml`
+   - `src-tauri/tauri.conf.json`
+2. Create and push a tag in format `v<version>` (for example `v0.1.0`).
+3. GitHub Actions workflow `Release DMG` is triggered automatically and will:
+   - run `bun tauri build --target universal-apple-darwin`
+   - upload `SmartIME_<version>_universal.dmg` and checksum file to GitHub Release.
 
 ## Disclaimer
 

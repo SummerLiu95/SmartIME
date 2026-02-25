@@ -119,8 +119,7 @@ SmartIME/
 │   └── tauri.conf.json
 ├── .github/
 │   └── workflows/
-│       ├── Auto Draft Release.yml    # Draft release automation
-│       └── Release.yml               # Build/release workflow
+│       └── release-dmg.yml           # Tag-triggered universal DMG release workflow
 ├── REQUIREMENTS.md                   # Product requirements
 ├── TECHNICAL_SPEC.md                 # Technical specification
 ├── AGENTS.md                         # Agent rulebook
@@ -385,44 +384,52 @@ type LLMConfig = {
 
 1.  **Production Build**:
     ```bash
-    bun tauri build
+    bun tauri build --target universal-apple-darwin
     ```
-    This command will first build the Next.js frontend (`next build` + `next export`), then compile Rust code, and finally package it into a `.dmg` or `.app` file.
+    This command builds the Next.js frontend (`next build` + static export), compiles Rust code for both Apple Silicon and Intel targets, and packages a universal DMG.
 
-3.  **Artifact Location**:
-    Generated executable files are located in the `src-tauri/target/release/bundle/macos/` directory.
+2.  **Artifact Location**:
+    Universal DMG artifact is generated at:
+    `src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_<version>_universal.dmg`
 
-### 5.3 Release & Distribution (Homebrew Cask)
+### 5.3 Release & Distribution (GitHub Release + Homebrew Cask)
 
-To support `brew install --cask` installation, a Homebrew Tap repository needs to be maintained and a Cask defined.
+To support `brew install --cask` installation, distribution is based on Git tags, GitHub Releases, and a Homebrew Tap cask.
 
-1.  **Create Tap Repository**:
-    Create a public repository named `homebrew-smartime` or `homebrew-tap` on GitHub.
+1.  **Release Trigger**:
+    GitHub Actions workflow `.github/workflows/release-dmg.yml` is triggered on `push` tags in format `v<version>` (for example `v0.1.0`).
 
-2.  **Define Cask (`Casks/smartime.rb`)**:
-    Create a Ruby script in the Tap repository pointing to the GitHub Release download link:
+2.  **Version Consistency Gate**:
+    The workflow validates that tag version matches:
+    *   `package.json`
+    *   `src-tauri/Cargo.toml`
+    *   `src-tauri/tauri.conf.json`
+
+3.  **CI Build and Publish Steps**:
+    *   Install Bun dependencies and Rust targets (`aarch64` + `x86_64`).
+    *   Run `bun tauri build --target universal-apple-darwin`.
+    *   Generate SHA256 checksum for DMG.
+    *   Publish DMG and checksum file to GitHub Release.
+
+4.  **Define Cask (`Casks/smartime.rb`)**:
+    The cask in Tap repository should point to universal DMG:
 
     ```ruby
     cask "smartime" do
       version "0.1.0"
-      sha256 "<CHECKSUM_OF_DMG>"
+      sha256 "<CHECKSUM_FROM_RELEASE_SHA256_FILE>"
 
-      url "https://github.com/<USERNAME>/SmartIME/releases/download/v#{version}/SmartIME_#{version}_aarch64.dmg"
+      url "https://github.com/<USERNAME>/SmartIME/releases/download/v#{version}/SmartIME_#{version}_universal.dmg"
       name "SmartIME"
       desc "Automatic input method switcher based on active app"
       homepage "https://github.com/<USERNAME>/SmartIME"
 
       app "SmartIME.app"
-
-      zap trash: [
-        "~/Library/Application Support/SmartIME",
-        "~/Library/Preferences/com.smartime.app.plist",
-      ]
     end
     ```
 
-3.  **Automate Release Process**:
-    Configure GitHub Actions to automatically update the version number and SHA256 checksum in the Tap repository when a new Release is published.
+5.  **Signing and Notarization Scope**:
+    Current release pipeline intentionally skips signing and notarization, and only provides unsigned DMG artifacts.
 
 ## 6. Post-Release Engineering Knowledge Base (2026-02)
 

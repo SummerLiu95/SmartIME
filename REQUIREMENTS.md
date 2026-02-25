@@ -187,3 +187,5 @@ The following UI/interaction changes are part of the finalized product behavior 
 
 ### 4.5 Distribution Method
 *   **Homebrew Cask**: Must support installation and update via `brew install --cask <app-name>` to facilitate rapid deployment by the developer community.
+*   **Tag-driven Release Automation**: Pushing a release tag (format `v<version>`) must trigger CI to build a universal macOS DMG package automatically.
+*   **Release Artifact Scope**: Release pipeline must publish DMG artifact (`SmartIME_<version>_universal.dmg`) and checksum for Homebrew Cask updates.
