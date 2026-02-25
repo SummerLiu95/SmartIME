@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-universal-dmg:
+  build-dmg:
     runs-on: macos-latest
 
     steps:
@@ -77,8 +77,8 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build universal DMG
-        run: bun tauri build --target universal-apple-darwin
+      - name: Build Apple Silicon DMG
+        run: bun tauri build
 
       - name: Prepare release assets
         id: assets
@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
 
           VERSION="${{ steps.versions.outputs.version }}"
-          DMG_PATH="src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_${VERSION}_universal.dmg"
+          DMG_PATH="src-tauri/target/release/bundle/dmg/SmartIME_${VERSION}_aarch64.dmg"
 
           if [[ ! -f "$DMG_PATH" ]]; then
             echo "DMG not found: $DMG_PATH"
@@ -95,8 +95,8 @@ jobs:
           fi
 
           SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
-          CHECKSUM_FILE="SmartIME_${VERSION}_universal.dmg.sha256"
-          echo "${SHA256}  SmartIME_${VERSION}_universal.dmg" > "$CHECKSUM_FILE"
+          CHECKSUM_FILE="SmartIME_${VERSION}_aarch64.dmg.sha256"
+          echo "${SHA256}  SmartIME_${VERSION}_aarch64.dmg" > "$CHECKSUM_FILE"
 
           {
             echo "dmg_path=$DMG_PATH"
@@ -115,11 +115,11 @@ jobs:
           ## SmartIME ${VERSION}
 
           ### Assets
-          - SmartIME_${VERSION}_universal.dmg
-          - SmartIME_${VERSION}_universal.dmg.sha256
+          - SmartIME_${VERSION}_aarch64.dmg
+          - SmartIME_${VERSION}_aarch64.dmg.sha256
 
           ### Homebrew Cask fields
-          - URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SmartIME_${VERSION}_universal.dmg
+          - URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SmartIME_${VERSION}_aarch64.dmg
           - SHA256: ${SHA256}
           EOF
 
