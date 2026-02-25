@@ -1,6 +1,6 @@
 {
   "name": "smartime",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Automatic input method switcher based on active app",
   "author": "Summer",
   "private": true,
