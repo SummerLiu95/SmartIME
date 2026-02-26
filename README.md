@@ -1,5 +1,9 @@
 # SmartIME
 
+<p align="center">
+  <img width="2414" height="2824" src="https://github.com/user-attachments/assets/ed7158dd-b13a-4121-8622-d0cb646dd40e" alt="SmartIME Screenshot"/>
+</p>
+
 SmartIME is a macOS desktop app (Tauri v2 + Next.js) that automatically switches input methods based on the active application.
 
 It is designed for users who frequently move between coding tools, browsers, and chat apps and want input method switching to happen automatically in the background.
@@ -15,7 +19,7 @@ It is designed for users who frequently move between coding tools, browsers, and
 ## Platform Support
 
 - macOS 12+ (Monterey and above)
-- Apple Silicon + Intel (universal target)
+- Apple Silicon (M1/M2/M3+)
 
 ## Installation
 
@@ -28,6 +32,7 @@ It is designed for users who frequently move between coding tools, browsers, and
 ### Option 2: Homebrew
 
 ```bash
+brew tap SummerLiu95/smartime
 brew install --cask smartime
 ```
 
@@ -61,12 +66,8 @@ bun tauri dev
 ## Build
 
 ```bash
-bun tauri build --target universal-apple-darwin
+bun tauri build
 ```
-
-DMG output is generated at:
-
-`src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_<version>_universal.dmg`
 
 ## Release Automation (Git Tag)
 
@@ -76,8 +77,8 @@ DMG output is generated at:
    - `src-tauri/tauri.conf.json`
 2. Create and push a tag in format `v<version>` (for example `v0.1.0`).
 3. GitHub Actions workflow `Release DMG` is triggered automatically and will:
-   - run `bun tauri build --target universal-apple-darwin`
-   - upload `SmartIME_<version>_universal.dmg` and checksum file to GitHub Release.
+   - run `bun tauri build`
+   - upload `SmartIME_<version>_aarch64.dmg` and checksum file to GitHub Release.
 
 ## Disclaimer
 
