@@ -80,6 +80,16 @@ bun tauri build
    - run `bun tauri build`
    - upload `SmartIME_<version>_aarch64.dmg` and checksum file to GitHub Release.
 
+
+## Milestone
+
+Future development plans include but are not limited to:
+
+- **Built-in Local LLM**: Integrate a lightweight Large Language Model (SLM) directly into the application to enable offline input method prediction without relying on third-party API keys.
+- **Editor Region Awareness**: Support fine-grained input method switching within code editors (e.g., automatically switching to English for code and local language for comments).
+
+> **Note**: These features are part of the roadmap but are not guaranteed to be implemented.
+
 ## Disclaimer
 
 - This project requires users to provide their own LLM API credentials (`LLM_API_KEY`), and any credential misuse, leakage, billing loss, account suspension, or related damages are the user's own responsibility.
