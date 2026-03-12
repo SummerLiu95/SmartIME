@@ -85,8 +85,11 @@ bun tauri build
 
 Future development plans include but are not limited to:
 
-- **Built-in Local LLM**: Integrate a lightweight Large Language Model (SLM) directly into the application to enable offline input method prediction without relying on third-party API keys.
-- **Editor Region Awareness**: Support fine-grained input method switching within code editors (e.g., automatically switching to English for code and local language for comments).
+- **Universal Build Support**: Support Intel chips (x86_64) to provide universal binary packaging.
+- **System Apps Support**: Extend support to macOS system applications (e.g., Safari).
+- **Focus Indicator**: Display a visual indicator of the current input method when the input cursor is focused.
+- **Website-Based Switching**: Enable automatic input method switching in browsers based on the specific website being visited.
+- **Built-in Local Model**: Integrate a built-in tiny LLM or lightweight classification model to remove dependency on third-party API keys.
 
 > **Note**: These features are part of the roadmap but are not guaranteed to be implemented.
 
