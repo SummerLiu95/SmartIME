@@ -47,11 +47,10 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
     *   Toggle styling: blue pill when ON, gray pill when OFF.
 
 #### C. Current Input Method Indicator
-*   **Reference behavior**: Inspired by Input Source Pro's ["自动展示当前输入法"](https://inputsource.pro/zh-CN) demo, but SmartIME only uses two switch-completion timings: after the user/system switches input source, and after an app change causes SmartIME to complete an automatic input source switch. The left-mouse-hold interaction is intentionally out of scope.
+*   **Reference behavior**: Inspired by Input Source Pro's ["自动展示当前输入法"](https://inputsource.pro/zh-CN) demo, but SmartIME only uses the switch-completion timing after an app change causes SmartIME to complete an automatic input source switch. The left-mouse-hold interaction is intentionally out of scope, and manual input source switching keeps macOS's native prompt instead of showing a SmartIME custom indicator.
 *   **Display gate**:
     *   The indicator appears only when the current system cursor is in an input/editing style and an editable text field or editor is focused.
     *   App switching is only a candidate trigger. The visual indicator appears after SmartIME completes the resulting automatic input source switch, so the message confirms that automatic switching took effect.
-    *   Input-source switching is also shown after the switch has completed, based on the newly current input source.
     *   If the app change preserves the current input source or the switch fails, the indicator is suppressed.
     *   If no editable input context is focused, the indicator is suppressed.
 *   **Visual form**:

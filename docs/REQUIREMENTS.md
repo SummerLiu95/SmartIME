@@ -125,12 +125,12 @@ System applications must participate in the same rule lifecycle as third-party a
 
 ### 2.8 Current Input Method Indicator Flow
 
-SmartIME should provide an optional, lightweight visual indicator for the current input method. The interaction reference is Input Source Pro's "automatic current input source display" pattern, but SmartIME only keeps the input-source-switch and app-switch-related automatic switching timings. It does not need the left-mouse-hold interaction. Both trigger timings are gated by the current input context: the indicator should only appear when the system cursor is in an input/editing style and an editable field or text input context is focused. The display moment is always after an input source switch action has completed.
+SmartIME should provide an optional, lightweight visual indicator for the current input method. The interaction reference is Input Source Pro's "automatic current input source display" pattern, but SmartIME only keeps the app-switch-related automatic switching timing. It does not need the left-mouse-hold interaction, and it does not need to show a custom indicator for manual input source switching because macOS already provides a native prompt in editable input contexts. The trigger is gated by the current input context: the indicator should only appear when the system cursor is in an input/editing style and an editable field or text input context is focused. The display moment is always after a SmartIME-initiated input source switch action has completed.
 
 1.  When the foreground app changes, SmartIME first applies the matched automatic input source rule. After the input source switch completes successfully, show a short-lived indicator with the current input method name/icon only if a focused editable input context is detected.
-2.  When the user or system switches the current input source outside SmartIME, show the same indicator after the input source switch has completed only if a focused editable input context is detected.
-3.  Do not show the indicator merely because the foreground app changed. If no input source switch action occurs, or the switch fails, suppress the indicator.
-4.  If the app switch or input-source switch happens while no text field/editor is focused, do not show the indicator.
+2.  Do not show the indicator merely because the foreground app changed. If no input source switch action occurs, or the switch fails, suppress the indicator.
+3.  Do not show a SmartIME custom indicator for manual user/system input source changes outside SmartIME.
+4.  If the app switch happens while no text field/editor is focused, do not show the indicator.
 5.  The indicator should appear near the active input context when the position is available; otherwise it should fall back to a stable, non-obstructive location near the active window.
 6.  The indicator must auto-dismiss quickly and must not steal focus, interrupt typing, or become a permanent overlay.
 7.  Users must be able to disable this indicator if they prefer silent operation.
@@ -194,13 +194,13 @@ SmartIME should provide an optional, lightweight visual indicator for the curren
     *   Unsupported or unobservable system apps must be skipped with recoverable errors only.
 *   **FR-15 Current Input Method Indicator**:
     *   Provide a setting to enable or disable the input method indicator.
-    *   Show the indicator only after an input source switch action has completed.
+    *   Show the indicator only after a SmartIME-initiated automatic input source switch action has completed.
     *   For app-switch-driven automatic switching, run the automatic input source switch first, then show the indicator after the switch succeeds.
-    *   For user/system input-source changes outside SmartIME, show the indicator after the new current input source is observed.
+    *   Do not show a custom indicator for user/system input-source changes outside SmartIME; rely on macOS native input source prompt for that interaction.
     *   Do not show the indicator for an app switch that preserves the current input source or fails to switch.
     *   Do not require or implement a left-mouse-hold or other explicit check gesture for this feature.
     *   Before showing the indicator, verify that the current system context is focused on an editable input area and the cursor is in an input/editing style.
-    *   Suppress the indicator when the active app changes or the input source changes but no editable input context is focused.
+    *   Suppress the indicator when the active app changes but no editable input context is focused.
     *   The indicator must display the current system input source, not only the configured target rule.
     *   The indicator must be a non-activating overlay and must not take keyboard focus.
     *   Indicator display and dismissal must not delay the automatic switching path.
