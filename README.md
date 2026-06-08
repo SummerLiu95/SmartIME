@@ -57,10 +57,34 @@ brew install --cask smartime
 bun install
 ```
 
+### Configure LLM credentials
+
+```bash
+cp .env.llm.example .env.llm
+```
+
+Then edit `.env.llm` with your local credentials:
+
+- `LLM_API_KEY`: LLM service API key
+- `LLM_MODEL`: Model name, such as `gpt-4o-mini`
+- `LLM_BASE_URL`: API base URL, defaulting to OpenAI-compatible endpoints
+
 ### Run in development mode
 
 ```bash
 bun tauri dev
+```
+
+Equivalent package-script form:
+
+```bash
+bun run tauri dev
+```
+
+This starts both the Next.js frontend and the Tauri desktop shell. For frontend-only work, use:
+
+```bash
+bun run dev
 ```
 
 ## Build
@@ -68,6 +92,25 @@ bun tauri dev
 ```bash
 bun tauri build
 ```
+
+For the frontend static build only:
+
+```bash
+bun run build
+```
+
+## Lint
+
+```bash
+bun run lint
+```
+
+## Debugging
+
+- Frontend debugging: right-click the Tauri window and choose "Inspect Element" to open the Web Inspector.
+- Backend debugging: use `println!` or `eprintln!` in Rust; output appears in the terminal running `bun tauri dev`.
+- IPC debugging: command names in frontend `invoke` calls must match backend `#[tauri::command]` names exactly.
+- Permission testing: validate macOS Accessibility behavior with a bundled `.app` before release decisions.
 
 ## Release Automation (Git Tag)
 
@@ -85,7 +128,6 @@ bun tauri build
 
 Future development plans include but are not limited to:
 
-- **Universal Build Support**: Support Intel chips (x86_64) to provide universal binary packaging.
 - **System Apps Support**: Extend support to macOS system applications (e.g., Safari).
 - **Focus Indicator**: Display a visual indicator of the current input method when the input cursor is focused.
 - **Website-Based Switching**: Enable automatic input method switching in browsers based on the specific website being visited.

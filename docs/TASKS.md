@@ -1,6 +1,6 @@
 # Development Tasks
 
-This document is generated based on `REQUIREMENTS.md` (Requirements Document), `DESIGN_DOC.md` (Design Document), and `TECHNICAL_SPEC.md` (Technical Specification), aiming to guide the development process of the SmartIME project.
+This document is generated based on sibling docs `REQUIREMENTS.md` (Requirements Document), `DESIGN_DOC.md` (Design Document), and `TECHNICAL_SPEC.md` (Technical Specification), aiming to guide the development process of the SmartIME project.
 
 ## 1. Project Initialization & Infrastructure
 

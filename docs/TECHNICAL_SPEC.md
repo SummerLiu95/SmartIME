@@ -19,56 +19,28 @@ This project is initialized based on **`nomandhoni-cs/tauri-nextjs-shadcn-boiler
 *   **HTTP Client**: [reqwest](https://docs.rs/reqwest/latest/reqwest/) (Rust side, for LLM API calls)
 *   **Package Manager**: bun
 
-### 2.2 Project Initialization
+### 2.2 Architectural Constraints
 
-Project initialization flow based on the template (excluding the template's `LICENSE`, `.gitignore`, `.git`):
+1.  **Platform boundary**
+    *   SmartIME is macOS-only because it depends on macOS input-source APIs, Accessibility permission behavior, LaunchAgent integration, and Dock/tray activation semantics.
+    *   Release artifacts target macOS 12+ and should be validated as bundled apps, not only through the dev runtime.
+2.  **Input-source authority**
+    *   The app must only use system-enabled and selectable input sources returned by macOS APIs.
+    *   Rule options and persisted rule values must be re-synced from system truth during onboarding scans and manual rescans.
+3.  **Frontend-backend contract**
+    *   Frontend IPC calls must match backend `#[tauri::command]` command names exactly.
+    *   Frontend code never writes app config or LLM config files directly; writes flow through Tauri commands.
+4.  **Performance target**
+    *   Foreground-app input switching should complete within 100ms where possible and stay under 200ms in normal operation.
+5.  **Secret handling**
+    *   `.env.llm` is local-only and ignored by Git.
+    *   API keys should be masked in UI and persisted securely.
 
-```bash
-# 1. Clone template repository to a temporary directory
-git clone https://github.com/nomandhoni-cs/tauri-nextjs-shadcn-boilerplate temp_boilerplate
+### 2.3 Scaffold Origin
 
-# 2. Copy template files to the project directory
-# Use --ignore-existing argument to ensure all existing files and configurations in the project root are preserved
-# (including .figma, .idea, .trae, LICENSE, .gitignore, tray-icon.svg, etc.)
-# Only exclude the template's .git directory to avoid breaking the current repository's version control
-rsync -av --progress temp_boilerplate/ . --exclude .git --ignore-existing
+The project was initialized from `nomandhoni-cs/tauri-nextjs-shadcn-boilerplate` and then adapted for SmartIME's macOS input-method switching domain.
 
-# 3. Clean up temporary directory
-rm -rf temp_boilerplate
-
-# 4. Install dependencies
-bun install
-
-# 5. Update project metadata
-# - package.json: name ("smartime"), version, description, author
-# - src-tauri/tauri.conf.json: productName ("SmartIME"), identifier ("com.smartime.app"), version
-# - src-tauri/Cargo.toml: name ("smartime"), version, authors
-
-# 6. Install additional UI dependencies (Icons & Animations)
-bun add lucide-react framer-motion clsx tailwind-merge
-
-# 7. Start development server
-bun tauri dev
-```
-
-### 2.3 Development & Debugging Flow
-
-1.  **Start Development Environment**:
-    ```bash
-    bun tauri dev
-    ```
-    This command starts both the Next.js frontend hot-reload server (localhost:3000) and the Tauri application window.
-
-2.  **Frontend Debugging**:
-    *   **UI Inspection**: Right-click in the Tauri window -> "Inspect Element" to open the Web Inspector (Safari style).
-    *   **Console**: Use `console.log` to output logs, which can be viewed in the Web Inspector's Console panel.
-
-3.  **Backend Debugging (Rust)**:
-    *   **Log Output**: Use `println!` or `eprintln!` macros to print logs; output content will be displayed directly in the terminal window running `bun tauri dev`.
-    *   **Code Modification**: After modifying Rust code under `src-tauri/src`, Tauri will automatically recompile and restart the application.
-
-4.  **Common Troubleshooting**:
-    *   If IPC communication fails, please check if the command name in the frontend `invoke` exactly matches the function name defined by the `#[tauri::command]` macro in the backend.
+The original scaffold import preserved existing repository files and excluded the template `.git` directory. Development commands, setup steps, debugging workflow, and release procedures are maintained in `README.md`.
 
 ## 3. Project Architecture Design
 
@@ -120,10 +92,16 @@ SmartIME/
 ├── .github/
 │   └── workflows/
 │       └── release-dmg.yml           # Tag-triggered universal DMG release workflow
-├── REQUIREMENTS.md                   # Product requirements
-├── TECHNICAL_SPEC.md                 # Technical specification
-├── AGENTS.md                         # Agent rulebook
-└── CLAUDE.md                         # Agent guidance
+├── docs/
+│   ├── DESIGN_DOC.md                 # Product and UX design document
+│   ├── Rulebook.md                   # AI mistake-prevention notes and testing lessons
+│   ├── REQUIREMENTS.md               # Product requirements
+│   ├── TASKS.md                      # User-requested or Plan-mode task planning
+│   ├── TECHNICAL_SPEC.md             # Technical specification
+│   └── exec-plan/                    # Records after confirmed planned work is executed
+├── CHANGELOG.md                      # Release history
+├── README.md                         # User-facing overview
+└── AGENTS.md                         # AI agent documentation index
 ```
 
 ### 3.2 Backend Module Responsibilities
@@ -176,7 +154,22 @@ SmartIME/
     *   `llm: Mutex<LLMClient>`
     *   `is_rescanning: AtomicBool`
 
-### 3.5 Configuration and Identity Conventions
+### 3.5 Frontend and UX Architecture Notes
+
+1.  **Design system**
+    *   UI should stay aligned with shadcn/ui, Tailwind CSS, Radix UI primitives, and lucide-react icons.
+    *   Motion should use framer-motion for subtle transitions such as fade, slide, and layout animations.
+2.  **Visual environment**
+    *   The interface adapts to macOS light/dark mode.
+    *   The app uses the system font stack, matching the San Francisco feel on macOS.
+3.  **Window sizing targets**
+    *   Main settings window target: 800x600.
+    *   Menu bar/tray panel target: 300x400.
+4.  **State shape**
+    *   Current implementation primarily uses page-local React state and Tauri IPC calls.
+    *   Avoid introducing a global client state store unless the workflow genuinely needs shared state across pages.
+
+### 3.6 Configuration and Identity Conventions
 
 1.  **App identity**
     *   Cargo package name: `smartime`
@@ -431,76 +424,8 @@ To support `brew install --cask` installation, distribution is based on Git tags
 5.  **Signing and Notarization Scope**:
     Current release pipeline intentionally skips signing and notarization, and only provides unsigned DMG artifacts.
 
-## 6. Post-Release Engineering Knowledge Base (2026-02)
+## 6. Operational Cross-References
 
-This section captures production-oriented lessons from onboarding tests and regression tests, including bug records, fixes, UI interaction optimizations, and engineering guardrails for future Tauri work.
+AI-prone mistake patterns, testing methods, project lessons, and release regression matrices live in `docs/Rulebook.md`.
 
-### 6.1 Incident Catalog (Issue -> Fix -> Lesson)
-
-| Incident ID | Area | What Happened | Implemented Fix | Engineering Lesson |
-| :--- | :--- | :--- | :--- | :--- |
-| INC-001 | Accessibility authorization | In dev/debug scenarios, users could not reliably add the app from Accessibility settings or could not locate the expected app identity. | Standardized app identity usage across `Cargo.toml`, `tauri.conf.json` (`productName`, `identifier`), and packaged app metadata. Added bundle-first validation for permission behavior. | macOS TCC behavior is identity-sensitive; name/identifier drift causes permission confusion. |
-| INC-002 | Permission onboarding UX | Permission guide action triggered both native prompt and system settings navigation, while retry/check also triggered prompt. This created duplicated/conflicting behavior. | Split actions by intent: guide card triggers authorization request only; retry button checks permission status only. Removed implicit cross-triggering. | Request and verification flows must be decoupled, especially for OS-level permission UX. |
-| INC-003 | Rescan stability | Clicking rescan could crash app (`EXC_BREAKPOINT` / `SIGTRAP`, tokio worker). | Treated rescan as a single in-flight operation, blocked duplicate triggers, replaced panic-prone runtime paths with explicit error handling, and guarded merge/persist sequence. | Async runtime paths in desktop apps must be panic-free and idempotent. |
-| INC-004 | Onboarding -> rules loading state | After onboarding scan success and redirect, rules panel could remain in a perpetual loading state. | Corrected completion-state propagation and ensured scan completion reliably clears loading state after config save. | Cross-page async completion must have one authoritative state transition. |
-| INC-005 | Input method list drift | Input method options showed entries that did not match current system-enabled input methods; removed system methods could remain in app options. | Rebuilt filtering logic to use enabled system input sources, removed helper/non-selectable items, deduplicated overlapping entries, and pruned stale options during scan/rescan sync. | Treat system input sources as source of truth on every scan, not as append-only state. |
-| INC-006 | Dock/tray/autostart lifecycle | Hide Dock mode, login-item flow, and relaunch/reactivation had edge cases: duplicate icons, wrong reopen behavior, or premature window close. | Separated `autoStart` and `hideDockIcon` concerns, preserved single-instance reactivation behavior, and aligned close/reopen semantics between Dock and tray entry points. | App lifecycle settings must be independent, and all entry points must resolve to one running instance/window state. |
-
-### 6.2 Interaction and UI Optimizations from Testing
-
-#### 6.2.1 Onboarding Permission Page
-
-1.  Changed guide card interaction to trigger native Accessibility authorization request only.
-2.  Changed retry/check button to permission check only (`check_permissions`), with no authorization side effect.
-3.  Removed automatic dual-action behavior (prompt + settings navigation in one click).
-4.  Clarified fallback behavior: manual system settings navigation is explicit, not implicit.
-
-#### 6.2.2 Rules Management Page
-
-1.  Kept rescan loading indicator accurate and persistent until task completion.
-2.  Ensured rescan continues and commits even when user navigates to another settings panel.
-3.  Corrected loading-state reset after onboarding redirects into rules view.
-4.  Enforced application list and input source list full re-sync with system state on every scan/rescan.
-
-#### 6.2.3 General Settings Page
-
-1.  Updated `Hide Dock Icon` behavior so toggling does not close the main window immediately.
-2.  Preserved background-running behavior after closing window in hide-Dock mode.
-3.  Ensured Dock/tray reactivation opens the existing settings window in a single running process.
-4.  Kept `Start at Login` behavior independent from `Hide Dock Icon` state.
-
-### 6.3 Tauri/macOS Testing Methodology Lessons
-
-1.  **Bundle-first principle for system integration**
-    *   Permission registration (TCC), login-item behavior, Dock/tray activation policy, and app identity should be validated with a bundled `.app`/`.dmg`.
-    *   `bun tauri dev` is useful for fast iteration but not sufficient for release acceptance of OS-integrated behaviors.
-
-2.  **Recommended debug bundle workflow for permission tests**
-    *   Build/install bundle to `/Applications`.
-    *   Reset permission state when needed: `tccutil reset Accessibility com.smartime.app`.
-    *   Re-run onboarding permission flow and validate both authorization and check paths independently.
-
-3.  **Crash analysis baseline**
-    *   Always capture full crash report and preserve:
-        *   exception type/code
-        *   crashing thread name
-        *   process identifier and bundle identifier
-    *   Map crash location to async task lifecycle (scan, merge, persist, UI state propagation).
-
-### 6.4 Engineering Guardrails for Future Development
-
-1.  Never use `unwrap`/`expect` in runtime paths for scan/rescan, permission flow, or app lifecycle transitions.
-2.  Keep permission request actions and permission verification actions separate at command and UI layers.
-3.  Keep app identity metadata consistent across Rust package metadata, Tauri config, and release bundle metadata.
-4.  Treat scan results as replacement-style synchronization with system state, not incremental append-only data.
-5.  Preserve single-instance semantics for all app entry points (launch, Dock, tray, login-item).
-
-### 6.5 Regression Validation Matrix (Release Candidate)
-
-Run this matrix on a bundled app before release:
-
-1.  Onboarding permission flow: request-only and check-only actions are independent.
-2.  First scan output: app list and input method options match current system state.
-3.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
-4.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
-5.  Login-item behavior: startup works without duplicate process/icon side effects.
+Implementation details and execution histories for confirmed planned work should be stored under `docs/exec-plan/`.
