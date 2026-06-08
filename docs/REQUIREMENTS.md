@@ -113,6 +113,28 @@ The following UI/interaction changes are part of the finalized product behavior 
     *   Reactivation via Dock icon or tray icon should be equivalent: open existing main settings window in the same running process.
     *   "Start at login" and "Hide Dock Icon" are independent settings and must not implicitly alter each other.
 
+### 2.7 System App Rule Flow
+
+System applications must participate in the same rule lifecycle as third-party apps.
+
+1.  During onboarding scan and manual rescan, SmartIME discovers eligible system apps in addition to apps under `/Applications` and `~/Applications`.
+2.  System apps are shown in the Rules panel with the same search, input-method selection, delete, and persistence behavior as other apps.
+3.  LLM-generated rules may be created for system apps such as Safari, Mail, Terminal, TextEdit, Notes, and Finder when the app can be discovered and observed through macOS APIs.
+4.  User-edited system app rules have the same priority as manual rules for third-party apps.
+5.  Apps that cannot be reliably observed or switched must be skipped gracefully and must not break scan or rescan.
+
+### 2.8 Current Input Method Indicator Flow
+
+SmartIME should provide an optional, lightweight visual indicator for the current input method. The interaction reference is Input Source Pro's "automatic current input source display" pattern, but SmartIME only keeps the input-source-switch and app-switch-related automatic switching timings. It does not need the left-mouse-hold interaction. Both trigger timings are gated by the current input context: the indicator should only appear when the system cursor is in an input/editing style and an editable field or text input context is focused. The display moment is always after an input source switch action has completed.
+
+1.  When the foreground app changes, SmartIME first applies the matched automatic input source rule. After the input source switch completes successfully, show a short-lived indicator with the current input method name/icon only if a focused editable input context is detected.
+2.  When the user or system switches the current input source outside SmartIME, show the same indicator after the input source switch has completed only if a focused editable input context is detected.
+3.  Do not show the indicator merely because the foreground app changed. If no input source switch action occurs, or the switch fails, suppress the indicator.
+4.  If the app switch or input-source switch happens while no text field/editor is focused, do not show the indicator.
+5.  The indicator should appear near the active input context when the position is available; otherwise it should fall back to a stable, non-obstructive location near the active window.
+6.  The indicator must auto-dismiss quickly and must not steal focus, interrupt typing, or become a permanent overlay.
+7.  Users must be able to disable this indicator if they prefer silent operation.
+
 ## 3. Functional Requirements
 
 ### 3.1 Core Functions
@@ -164,12 +186,31 @@ The following UI/interaction changes are part of the finalized product behavior 
 *   **FR-13 General Settings Independence**:
     *   `autoStart` and `hideDockIcon` must be implemented as independent persisted preferences.
     *   Updating one setting must not implicitly mutate the other setting.
+*   **FR-14 System Apps Support**:
+    *   App scanning must include eligible macOS system application locations, including `/System/Applications` and `/System/Library/CoreServices` where appropriate.
+    *   The rule-generation pipeline must not blanket-exclude `com.apple.*` bundle IDs.
+    *   System app rules must support AI generation, manual override, deletion, rescan alignment, and persistence.
+    *   Duplicate bundle IDs across scan roots must still be de-duplicated.
+    *   Unsupported or unobservable system apps must be skipped with recoverable errors only.
+*   **FR-15 Current Input Method Indicator**:
+    *   Provide a setting to enable or disable the input method indicator.
+    *   Show the indicator only after an input source switch action has completed.
+    *   For app-switch-driven automatic switching, run the automatic input source switch first, then show the indicator after the switch succeeds.
+    *   For user/system input-source changes outside SmartIME, show the indicator after the new current input source is observed.
+    *   Do not show the indicator for an app switch that preserves the current input source or fails to switch.
+    *   Do not require or implement a left-mouse-hold or other explicit check gesture for this feature.
+    *   Before showing the indicator, verify that the current system context is focused on an editable input area and the cursor is in an input/editing style.
+    *   Suppress the indicator when the active app changes or the input source changes but no editable input context is focused.
+    *   The indicator must display the current system input source, not only the configured target rule.
+    *   The indicator must be a non-activating overlay and must not take keyboard focus.
+    *   Indicator display and dismissal must not delay the automatic switching path.
 
 ## 4. Non-functional Requirements
 
 ### 4.1 Performance Requirements
 *   **Response Speed**: The latency from detecting application switch to completing input method switch should be less than 200ms, ensuring the input method is ready when the user starts typing.
 *   **Resource Usage**: When running silently in the background, CPU usage should be less than 1%, and memory usage should be less than 50MB.
+*   **Indicator Responsiveness**: Input method indicator presentation should start within 100ms of the trigger event and dismiss automatically within a short configurable or fixed duration.
 
 ### 4.2 Security & Privacy
 *   **Permission Minimization**: Only request necessary "Accessibility" or "Input Monitoring" permissions.
@@ -184,6 +225,7 @@ The following UI/interaction changes are part of the finalized product behavior 
 *   **System Tray**: Application should reside in the menu bar and not occupy Dock space (Configurable).
 *   **Auto-start**: Supports configuration to start automatically at login.
 *   **Failure Handling**: If LLM API connectivity check fails, clear error reasons (such as 401 Unauthorized, Network Error) should be prompted and retry allowed.
+*   **Non-intrusive Feedback**: The input method indicator should be visually clear but must not cover typed content for long enough to interrupt the user's flow.
 
 ### 4.5 Distribution Method
 *   **Homebrew Cask**: Must support installation and update via `brew install --cask <app-name>` to facilitate rapid deployment by the developer community.
