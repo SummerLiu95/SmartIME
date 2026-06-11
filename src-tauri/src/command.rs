@@ -13,13 +13,25 @@ use tauri::{AppHandle, State};
 // Input Source Commands
 
 #[tauri::command]
-pub fn cmd_get_system_input_sources() -> Result<Vec<InputSource>> {
-    get_system_input_sources()
+pub async fn cmd_get_system_input_sources(app: AppHandle) -> Result<Vec<InputSource>> {
+    run_input_source_task_on_main_thread_async(
+        app,
+        "input source scan",
+        Duration::from_secs(5),
+        get_system_input_sources,
+    )
+    .await
 }
 
 #[tauri::command]
-pub fn cmd_select_input_source(id: String) -> Result<()> {
-    select_input_source(&id)
+pub async fn cmd_select_input_source(id: String, app: AppHandle) -> Result<()> {
+    run_input_source_task_on_main_thread_async(
+        app,
+        "input source selection",
+        Duration::from_millis(500),
+        move || select_input_source(&id),
+    )
+    .await
 }
 
 // Config Commands
@@ -183,23 +195,56 @@ impl Drop for RescanGuard<'_> {
 }
 
 fn get_system_input_sources_on_main_thread(app: &AppHandle) -> Result<Vec<InputSource>> {
-    let (tx, rx) = mpsc::channel::<std::result::Result<Vec<InputSource>, String>>();
+    run_input_source_task_on_main_thread(
+        app,
+        "input source scan",
+        Duration::from_secs(5),
+        get_system_input_sources,
+    )
+}
+
+async fn run_input_source_task_on_main_thread_async<T, F>(
+    app: AppHandle,
+    task_name: &'static str,
+    timeout: Duration,
+    task: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        run_input_source_task_on_main_thread(&app, task_name, timeout, task)
+    })
+    .await
+    .map_err(|e| AppError::InputSource(format!("Failed to join {task_name}: {e}")))?
+}
+
+fn run_input_source_task_on_main_thread<T, F>(
+    app: &AppHandle,
+    task_name: &'static str,
+    timeout: Duration,
+    task: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel::<std::result::Result<T, String>>();
 
     app.run_on_main_thread(move || {
-        let result = get_system_input_sources().map_err(|e| e.to_string());
+        let result = task().map_err(|e| e.to_string());
         let _ = tx.send(result);
     })
     .map_err(|e| {
         AppError::InputSource(format!(
-            "Failed to schedule input source scan on main thread: {}",
-            e
+            "Failed to schedule {task_name} on main thread: {e}"
         ))
     })?;
 
-    let result = rx.recv_timeout(Duration::from_secs(5)).map_err(|e| {
+    let result = rx.recv_timeout(timeout).map_err(|e| {
         AppError::InputSource(format!(
-            "Timed out waiting for main-thread input source scan: {}",
-            e
+            "Timed out waiting for main-thread {task_name}: {e}"
         ))
     })?;
 
@@ -334,7 +379,7 @@ fn normalize_rule_inputs(mut rules: Vec<AppRule>, input_sources: &[InputSource])
 
 fn filter_target_apps(apps: Vec<SystemApp>) -> Vec<SystemApp> {
     apps.into_iter()
-        .filter(|app| !app.bundle_id.starts_with("com.apple."))
+        .filter(|app| !app.bundle_id.trim().is_empty() && !app.name.trim().is_empty())
         .collect()
 }
 
@@ -418,8 +463,38 @@ mod tests {
         ];
 
         let filtered = filter_target_apps(apps);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered
+            .iter()
+            .any(|app| app.bundle_id == "com.apple.Safari"));
+        assert!(filtered
+            .iter()
+            .any(|app| app.bundle_id == "com.google.Chrome"));
+    }
+
+    #[test]
+    fn test_filter_target_apps_skips_empty_identity_only() {
+        let apps = vec![
+            SystemApp {
+                name: "Safari".to_string(),
+                bundle_id: "com.apple.Safari".to_string(),
+                path: PathBuf::from("/Applications/Safari.app"),
+            },
+            SystemApp {
+                name: "".to_string(),
+                bundle_id: "com.example.empty-name".to_string(),
+                path: PathBuf::from("/Applications/EmptyName.app"),
+            },
+            SystemApp {
+                name: "Empty Bundle".to_string(),
+                bundle_id: " ".to_string(),
+                path: PathBuf::from("/Applications/EmptyBundle.app"),
+            },
+        ];
+
+        let filtered = filter_target_apps(apps);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].bundle_id, "com.google.Chrome");
+        assert_eq!(filtered[0].bundle_id, "com.apple.Safari");
     }
 
     #[test]
@@ -476,6 +551,11 @@ mod tests {
                 bundle_id: "com.example.delta".to_string(),
                 path: PathBuf::from("/Applications/Delta.app"),
             },
+            SystemApp {
+                name: "Safari".to_string(),
+                bundle_id: "com.apple.Safari".to_string(),
+                path: PathBuf::from("/Applications/Safari.app"),
+            },
         ];
 
         let generated = vec![AppRule {
@@ -504,6 +584,12 @@ mod tests {
                 preferred_input: "com.apple.keylayout.ABC".to_string(),
                 is_ai_generated: false,
             },
+            AppRule {
+                bundle_id: "com.apple.Safari".to_string(),
+                app_name: "Safari".to_string(),
+                preferred_input: "com.apple.inputmethod.SCIM.ITABC".to_string(),
+                is_ai_generated: false,
+            },
         ];
 
         let input_sources = vec![
@@ -521,7 +607,7 @@ mod tests {
 
         let aligned = align_rules_with_apps(&target_apps, generated, &existing, &input_sources);
 
-        assert_eq!(aligned.len(), 3);
+        assert_eq!(aligned.len(), 4);
         assert_eq!(aligned[0].bundle_id, "com.example.alpha");
         assert_eq!(aligned[0].preferred_input, "com.apple.keylayout.ABC");
         assert!(!aligned[0].is_ai_generated);
@@ -531,6 +617,13 @@ mod tests {
 
         assert_eq!(aligned[2].bundle_id, "com.example.delta");
         assert_eq!(aligned[2].preferred_input, "com.apple.keylayout.ABC");
+
+        assert_eq!(aligned[3].bundle_id, "com.apple.Safari");
+        assert_eq!(
+            aligned[3].preferred_input,
+            "com.apple.inputmethod.SCIM.ITABC"
+        );
+        assert!(!aligned[3].is_ai_generated);
 
         assert!(!aligned
             .iter()

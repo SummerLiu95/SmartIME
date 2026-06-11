@@ -1,13 +1,18 @@
+#![allow(deprecated)] // Keep using the existing cocoa/objc bridge until the project migrates to objc2.
+
 use crate::error::{AppError, Result};
+use cocoa::base::{id, nil};
+use cocoa::foundation::NSString;
 use core_foundation::array::{CFArrayGetCount, CFArrayGetValueAtIndex, CFArrayRef};
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
 use core_foundation::boolean::{CFBoolean, CFBooleanRef};
 use core_foundation::dictionary::CFDictionaryRef;
 use core_foundation::number::{CFNumber, CFNumberRef};
 use core_foundation::string::{CFString, CFStringRef};
+use objc::{class, msg_send, sel, sel_impl};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::io::Cursor;
 use std::process::Command;
 use std::ptr;
@@ -45,10 +50,16 @@ extern "C" {
     ) -> CFArrayRef;
 
     pub fn TISSelectInputSource(inputSource: TISInputSourceRef) -> OSStatus;
+    pub fn TISCopyCurrentKeyboardInputSource() -> TISInputSourceRef;
     pub fn TISGetInputSourceProperty(
         inputSource: TISInputSourceRef,
         propertyKey: CFStringRef,
     ) -> CFTypeRef;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFLocaleCopyPreferredLanguages() -> CFArrayRef;
 }
 
 /// 获取当前系统所有已启用的键盘输入法
@@ -56,6 +67,7 @@ pub fn get_system_input_sources() -> Result<Vec<InputSource>> {
     let mut sources = Vec::new();
     let mut seen_ids = HashSet::new();
     let menu_enabled = load_menu_enabled_sources();
+    let preferred_language = preferred_language_identifier();
 
     unsafe {
         let source_list = TISCreateInputSourceList(ptr::null(), false);
@@ -72,7 +84,7 @@ pub fn get_system_input_sources() -> Result<Vec<InputSource>> {
                 continue;
             }
 
-            if let Some(parsed) = parse_input_source(source) {
+            if let Some(parsed) = parse_input_source(source, preferred_language.as_deref()) {
                 if let Some(filter) = &menu_enabled {
                     if !filter.matches(
                         &parsed.source,
@@ -95,6 +107,29 @@ pub fn get_system_input_sources() -> Result<Vec<InputSource>> {
     }
 
     Ok(sources)
+}
+
+/// 获取当前系统正在使用的键盘输入法
+pub fn get_current_input_source() -> Result<InputSource> {
+    let preferred_language = preferred_language_identifier();
+
+    unsafe {
+        let source = TISCopyCurrentKeyboardInputSource();
+        if source.is_null() {
+            return Err(AppError::InputSource(
+                "Failed to copy current input source".to_string(),
+            ));
+        }
+
+        let result = parse_input_source(source, preferred_language.as_deref())
+            .map(|parsed| parsed.source)
+            .ok_or_else(|| {
+                AppError::InputSource("Failed to parse current input source".to_string())
+            });
+
+        CFRelease(source as CFTypeRef);
+        result
+    }
 }
 
 /// 切换到指定的输入法 ID
@@ -332,7 +367,10 @@ fn load_menu_enabled_sources() -> Option<MenuEnabledSources> {
     }
 }
 
-unsafe fn parse_input_source(source: TISInputSourceRef) -> Option<ParsedInputSource> {
+unsafe fn parse_input_source(
+    source: TISInputSourceRef,
+    preferred_language: Option<&str>,
+) -> Option<ParsedInputSource> {
     let id_ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
     let name_ptr = TISGetInputSourceProperty(source, kTISPropertyLocalizedName);
     let cat_ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceCategory);
@@ -345,7 +383,8 @@ unsafe fn parse_input_source(source: TISInputSourceRef) -> Option<ParsedInputSou
     }
 
     let id = CFString::wrap_under_get_rule(id_ptr as CFStringRef).to_string();
-    let name = CFString::wrap_under_get_rule(name_ptr as CFStringRef).to_string();
+    let tis_name = CFString::wrap_under_get_rule(name_ptr as CFStringRef).to_string();
+    let name = input_source_display_name(&id, &tis_name, preferred_language);
     let category = CFString::wrap_under_get_rule(cat_ptr as CFStringRef).to_string();
     let source_type = CFString::wrap_under_get_rule(source_type_ptr as CFStringRef).to_string();
     let keyboard_layout_key = CFString::new("KeyboardLayout ID");
@@ -374,6 +413,110 @@ unsafe fn parse_input_source(source: TISInputSourceRef) -> Option<ParsedInputSou
         bundle_id,
         input_mode_id,
     })
+}
+
+fn input_source_display_name(
+    input_source_id: &str,
+    tis_name: &str,
+    preferred_language: Option<&str>,
+) -> String {
+    choose_input_source_display_name(
+        input_source_id,
+        appkit_localized_name_for_input_source(input_source_id),
+        tis_name,
+        preferred_language,
+    )
+}
+
+fn choose_input_source_display_name(
+    input_source_id: &str,
+    appkit_name: Option<String>,
+    tis_name: &str,
+    preferred_language: Option<&str>,
+) -> String {
+    let system_name = appkit_name
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| tis_name.to_string());
+
+    apple_builtin_input_source_name(input_source_id, &system_name, preferred_language)
+        .map(str::to_string)
+        .unwrap_or(system_name)
+}
+
+fn apple_builtin_input_source_name(
+    input_source_id: &str,
+    current_name: &str,
+    preferred_language: Option<&str>,
+) -> Option<&'static str> {
+    let preferred_language = preferred_language?;
+    if !is_simplified_chinese_language(preferred_language) {
+        return None;
+    }
+
+    match input_source_id {
+        "com.apple.inputmethod.SCIM.ITABC" if is_simplified_pinyin_fallback(current_name) => {
+            Some("简体拼音")
+        }
+        _ => None,
+    }
+}
+
+fn is_simplified_chinese_language(language: &str) -> bool {
+    let normalized = language.replace('_', "-").to_ascii_lowercase();
+    normalized.starts_with("zh-hans") || normalized == "zh-cn" || normalized.starts_with("zh-cn-")
+}
+
+fn is_simplified_pinyin_fallback(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    normalized.contains("pinyin") && normalized.contains("simplified")
+}
+
+fn preferred_language_identifier() -> Option<String> {
+    unsafe {
+        let languages = CFLocaleCopyPreferredLanguages();
+        if languages.is_null() {
+            return None;
+        }
+
+        let language = if CFArrayGetCount(languages) > 0 {
+            let language_ptr = CFArrayGetValueAtIndex(languages, 0) as CFStringRef;
+            if language_ptr.is_null() {
+                None
+            } else {
+                Some(CFString::wrap_under_get_rule(language_ptr).to_string())
+            }
+        } else {
+            None
+        };
+
+        CFRelease(languages as CFTypeRef);
+        language
+    }
+}
+
+fn appkit_localized_name_for_input_source(input_source_id: &str) -> Option<String> {
+    unsafe {
+        let input_source_id_nsstring = NSString::alloc(nil).init_str(input_source_id);
+        let localized_name: id = msg_send![
+            class!(NSTextInputContext),
+            localizedNameForInputSource: input_source_id_nsstring
+        ];
+
+        let result = nsstring_to_owned(localized_name);
+        let _: () = msg_send![input_source_id_nsstring, release];
+        result
+    }
+}
+
+unsafe fn nsstring_to_owned(value: id) -> Option<String> {
+    if value == nil {
+        return None;
+    }
+    let ptr = NSString::UTF8String(value);
+    if ptr.is_null() {
+        return None;
+    }
+    Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
 }
 
 unsafe fn is_selectable_keyboard_source(source: TISInputSourceRef) -> bool {
@@ -698,5 +841,66 @@ mod tests {
             &["ABC"],
             &["com.apple.inputmethod.SCIM"],
         ));
+    }
+
+    #[test]
+    fn test_choose_input_source_display_name_prefers_appkit_localized_name() {
+        assert_eq!(
+            choose_input_source_display_name(
+                "com.apple.inputmethod.SCIM.ITABC",
+                Some("简体拼音".to_string()),
+                "Pinyin - Simplified",
+                Some("zh-Hans-CN"),
+            ),
+            "简体拼音"
+        );
+    }
+
+    #[test]
+    fn test_choose_input_source_display_name_falls_back_to_tis_name() {
+        assert_eq!(
+            choose_input_source_display_name(
+                "com.apple.inputmethod.SCIM.ITABC",
+                None,
+                "Pinyin - Simplified",
+                Some("en-CN"),
+            ),
+            "Pinyin - Simplified"
+        );
+        assert_eq!(
+            choose_input_source_display_name(
+                "com.apple.keylayout.ABC",
+                Some("   ".to_string()),
+                "ABC",
+                Some("zh-Hans-CN"),
+            ),
+            "ABC"
+        );
+    }
+
+    #[test]
+    fn test_choose_input_source_display_name_uses_simplified_chinese_builtin_fallback() {
+        assert_eq!(
+            choose_input_source_display_name(
+                "com.apple.inputmethod.SCIM.ITABC",
+                Some("Pinyin – Simplified".to_string()),
+                "Pinyin - Simplified",
+                Some("zh-Hans-CN"),
+            ),
+            "简体拼音"
+        );
+    }
+
+    #[test]
+    fn test_choose_input_source_display_name_keeps_english_fallback_outside_simplified_chinese() {
+        assert_eq!(
+            choose_input_source_display_name(
+                "com.apple.inputmethod.SCIM.ITABC",
+                Some("Pinyin – Simplified".to_string()),
+                "Pinyin - Simplified",
+                Some("en-CN"),
+            ),
+            "Pinyin – Simplified"
+        );
     }
 }

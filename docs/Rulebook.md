@@ -182,6 +182,84 @@ Keep identity aligned across:
 - Validate TCC permission entries are associated with the expected bundle identifier.
 - Validate login-item and Dock/tray behavior with the packaged identity.
 
+### 3.9 Listing Every System Bundle As A Rule Target
+
+**Mistake**: Scanning system app directories and surfacing every discovered `.app` bundle in the Rules UI.
+
+**Why it is easy to miss**: Directory traversal proves that the bundle exists, but many system bundles are internal agents, onboarding shells, or background utilities that are not meaningful input-method rule targets.
+
+**Correct behavior**:
+
+- Keep third-party and user-installed apps discoverable as usual.
+- For system roots, expose only a curated set of common input-capable apps that users are likely to switch into and type in.
+- Prefer localized display names for supported system apps so the Rules list stays recognizable.
+- Include Cryptex-backed Safari locations when building the curated system-app set.
+
+**Test method**:
+
+1.  Build the bundled app.
+2.  Open the Rules panel and run rescan.
+3.  Confirm Safari, Notes, Reminders, TextEdit, Terminal, Mail, Messages, Calendar, and Finder can appear when present.
+4.  Confirm internal bundles such as `SystemUIServer`, `Dock`, `ControlCenter`, and similar background components do not appear in the rules list.
+
+### 3.10 Calling TIS Current-Input APIs Off The Main Thread
+
+**Mistake**: Reading the current macOS input source from a background thread during observer work.
+
+**Why it is easy to miss**: `TISSelectInputSource` was already scheduled onto the main thread, so it is easy to assume nearby `TISCopyCurrentKeyboardInputSource` calls are equally safe anywhere.
+
+**Correct behavior**:
+
+- Treat current-input-source reads as main-thread-only HIToolbox/TIS work.
+- Reuse one main-thread scheduling helper for frontend commands and background-triggered observer flows.
+- If a background worker needs current input-source state, marshal the work to the main thread and wait with a bounded timeout.
+
+**Test method**:
+
+1.  Build the bundled `.app`.
+2.  Keep automatic switching on.
+3.  Rapidly switch between managed apps that trigger automatic input-source changes.
+4.  Confirm there is no `EXC_BREAKPOINT` crash involving `TISCopyCurrentKeyboardInputSource` or `dispatch_assert_queue`.
+
+### 3.11 Blocking A Sync Command While It Schedules Main-Thread TIS Work
+
+**Mistake**: Making a synchronous Tauri command enqueue TIS work with `run_on_main_thread`, then immediately blocking that same command while waiting for the result channel.
+
+**Why it is easy to miss**: The helper looks correct because it keeps HIToolbox/TIS calls on the main thread, but frontend IPC commands can already be running on the event path that must process the queued main-thread task. The command can end up waiting for work that cannot run until the command returns.
+
+**Correct behavior**:
+
+- Frontend-facing commands that schedule main-thread TIS work must be `async`.
+- Put the blocking channel wait inside `tauri::async_runtime::spawn_blocking` or an equivalent background wait boundary.
+- Keep the actual TIS query/selection inside the `run_on_main_thread` closure.
+- Preserve bounded timeouts and return recoverable `AppError::InputSource` errors instead of panicking.
+
+**Test method**:
+
+1.  Run `cd src-tauri && cargo test`.
+2.  From the frontend, trigger input-source list loading and manual input-source selection.
+3.  Run onboarding scan and manual rescan, which both depend on system input-source retrieval.
+4.  Confirm these flows do not hit the 500ms or 5s main-thread timeout errors.
+
+### 3.12 Assuming TIS Localized Names Match System Settings
+
+**Mistake**: Using only `kTISPropertyLocalizedName` as the input method label and assuming it matches the label macOS shows in System Settings or the input menu.
+
+**Why it is easy to miss**: The property name says "localized", but some built-in input methods can still return English fallback labels such as `Pinyin - Simplified` on a Chinese system.
+
+**Correct behavior**:
+
+- Resolve display names with AppKit `NSTextInputContext.localizedNameForInputSource:` first.
+- If AppKit still returns a known English fallback for a built-in Apple input method, apply a small locale-gated built-in localization fallback.
+- Fall back to `kTISPropertyLocalizedName` when neither AppKit nor the built-in fallback provides a better label.
+- Keep rule persistence based on stable input source IDs, not display names.
+
+**Test method**:
+
+1.  Enable Simplified Chinese Pinyin in macOS input sources.
+2.  Open SmartIME Rules and inspect the input method dropdown.
+3.  Confirm the label follows the system-localized name, for example `简体拼音`, while rule values still store the original input source ID.
+
 ## 4. Incident Catalog
 
 | Incident ID | AI-prone mistake | What Happened | Corrective Lesson | Regression Test |
@@ -192,6 +270,10 @@ Keep identity aligned across:
 | INC-004 | Tying async completion to page lifecycle | After onboarding scan success and redirect, rules panel could remain in a perpetual loading state. | Cross-page async completion must have one authoritative backend state transition. | Complete onboarding scan, redirect to rules, verify rules load and loading state clears. |
 | INC-005 | Treating system state as append-only | Input method options showed stale or helper entries that did not match currently enabled input methods. | Apps and input sources must be re-synced from system truth on every scan/rescan. | Change enabled input methods, rescan, verify dropdown and persisted rules are pruned. |
 | INC-006 | Coupling Dock/tray/autostart lifecycle | Hide Dock mode, login item flow, and relaunch/reactivation had duplicate icon or wrong reopen behavior. | Lifecycle settings must remain independent and all entry points must restore one existing window/process. | Validate hide-Dock close, tray reopen, Dock reopen, and login item startup on bundled app. |
+| INC-007 | Treating all system bundles as user-facing app targets | System scan surfaced internal/background Apple bundles while still risking missing Safari on Cryptex-backed systems. | System roots must be filtered to a curated input-capable allowlist, with Safari Cryptex locations and localized display names handled deliberately. | Rescan bundled app and confirm common typing apps appear while background system bundles stay hidden. |
+| INC-008 | Calling current-input-source APIs off the main thread | Current-input-source reads in app-switch handling crashed bundled app with `EXC_BREAKPOINT` / `dispatch_assert_queue` inside `TISCopyCurrentKeyboardInputSource`. | HIToolbox current-input-source reads must be marshaled to the main thread just like input-source selection. | Rapid app switching on bundled app should not crash while automatic switching continues to work. |
+| INC-009 | Blocking a sync command after scheduling main-thread TIS work | Frontend-facing input-source commands could enqueue TIS work back to the main thread and then wait synchronously, risking a timeout because the queued task could not run until the command returned. | Make frontend TIS commands async and move the channel wait into `tauri::async_runtime::spawn_blocking`, while keeping the actual TIS call in `run_on_main_thread`. | Load input sources, manually select an input source, and run onboarding/manual rescans without 500ms or 5s main-thread timeout errors. |
+| INC-010 | Trusting TIS localized names as final UI labels | Built-in input methods could show English fallback labels such as `Pinyin - Simplified` instead of the system-localized label users see in macOS. | Prefer AppKit input-source localized names, use a locale-gated built-in Apple fallback for known English labels, and fall back to TIS only when needed. | On a Chinese macOS system, Rules dropdown should show `简体拼音` or the current system-localized equivalent for Simplified Pinyin. |
 
 ## 5. Testing Methods AI Should Prefer
 
@@ -234,7 +316,10 @@ Run this matrix on a bundled app before release:
 
 1.  Permission onboarding: request-only and check-only actions are independent.
 2.  First scan output: app list and input method options match current system state.
-3.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
-4.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
-5.  Login item behavior: startup works without duplicate process/icon side effects.
-6.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.
+3.  Input method labels: options use system-localized display names while persisted values remain stable source IDs.
+4.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
+5.  System app scope: curated input-capable Apple apps appear with recognizable names; internal/system utility bundles stay hidden.
+6.  Input-source stability: repeated automatic input-source switches do not crash the app, current-input-source reads do not leave the main thread, and frontend input-source commands do not time out while waiting for main-thread TIS work.
+7.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
+8.  Login item behavior: startup works without duplicate process/icon side effects.
+9.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.

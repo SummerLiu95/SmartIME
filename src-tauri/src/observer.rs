@@ -1,7 +1,7 @@
 #![allow(deprecated)] // Suppress warnings for deprecated cocoa APIs
 
 use crate::config::AppState;
-use crate::input_source::select_input_source;
+use crate::input_source::{get_current_input_source, select_input_source};
 use cocoa::base::{id, nil};
 use cocoa::foundation::{NSAutoreleasePool, NSString};
 use objc::declare::ClassDecl;
@@ -41,7 +41,6 @@ pub fn setup_observer(app_handle: AppHandle) {
     // 启动一个线程来处理事件并发送给前端
     std::thread::spawn(move || {
         let mut last_bundle_id = String::new();
-        let mut last_selected_input = String::new();
 
         while let Ok(event) = rx.recv() {
             if event.bundle_id == last_bundle_id {
@@ -55,19 +54,10 @@ pub fn setup_observer(app_handle: AppHandle) {
                 eprintln!("Failed to emit app_focused event: {}", e);
             }
 
-            match apply_input_source_for_bundle_on_main_thread(
-                &app_handle,
-                event.bundle_id.clone(),
-                if last_selected_input.is_empty() {
-                    None
-                } else {
-                    Some(last_selected_input.clone())
-                },
-            ) {
-                Ok(Some(selected_input)) => {
-                    last_selected_input = selected_input;
-                }
-                Ok(None) => {}
+            match apply_input_source_for_bundle_on_main_thread(&app_handle, event.bundle_id.clone())
+            {
+                Ok(SwitchOutcome::Switched) => {}
+                Ok(SwitchOutcome::Unchanged | SwitchOutcome::NoRule) => {}
                 Err(e) => {
                     eprintln!(
                         "Failed to switch input source for {} ({}): {}",
@@ -132,32 +122,37 @@ fn resolve_target_input_source(app_handle: &AppHandle, bundle_id: &str) -> Optio
     manager.get_rule(bundle_id)
 }
 
+enum SwitchOutcome {
+    Switched,
+    Unchanged,
+    NoRule,
+}
+
 fn apply_input_source_for_bundle_on_main_thread(
     app_handle: &AppHandle,
     bundle_id: String,
-    previous_selected_input: Option<String>,
-) -> Result<Option<String>, String> {
-    let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+) -> Result<SwitchOutcome, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Result<SwitchOutcome, String>>();
     let schedule_handle = app_handle.clone();
     let resolve_handle = app_handle.clone();
 
     schedule_handle
         .run_on_main_thread(move || {
-            let result = (|| -> Result<Option<String>, String> {
+            let result = (|| -> Result<SwitchOutcome, String> {
                 let Some(target_input) = resolve_target_input_source(&resolve_handle, &bundle_id)
                 else {
-                    return Ok(None);
+                    return Ok(SwitchOutcome::NoRule);
                 };
 
-                if previous_selected_input
-                    .as_ref()
-                    .is_some_and(|current| current == &target_input)
+                if get_current_input_source()
+                    .ok()
+                    .is_some_and(|current| current.id == target_input)
                 {
-                    return Ok(Some(target_input));
+                    return Ok(SwitchOutcome::Unchanged);
                 }
 
                 select_input_source(&target_input).map_err(|e| e.to_string())?;
-                Ok(Some(target_input))
+                Ok(SwitchOutcome::Switched)
             })();
             let _ = tx.send(result);
         })

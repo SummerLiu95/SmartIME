@@ -112,9 +112,9 @@ SmartIME/
 | `command.rs` | IPC command layer for input sources, config, LLM operations, scanning, rescan lifecycle, and permissions. | `tauri::command`, `AppState` |
 | `config.rs` | Core config data models and JSON persistence (`config.json`) plus in-memory rule cache (`HashMap`). | `serde`, `serde_json`, `dirs`, `std::fs` |
 | `llm.rs` | LLM config/model client, config persistence (`llm_config.json`), connectivity checks, per-app prediction calls. | `reqwest`, `dotenvy`, `serde` |
-| `input_source.rs` | macOS TIS input source discovery/filtering and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, `defaults export` parsing |
-| `system_apps.rs` | App bundle scanning in `/Applications` and `~/Applications`, Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist` |
-| `observer.rs` | NSWorkspace active-app notifications, emits `app_focused`, applies rules on main thread. | `cocoa`, `objc`, `once_cell` |
+| `input_source.rs` | macOS input source discovery/filtering, system-localized display-name resolution, current input-source query, and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, AppKit `NSTextInputContext`, `defaults export` parsing |
+| `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist` |
+| `observer.rs` | NSWorkspace active-app notifications, emits `app_focused`, and applies rules on main thread after comparing the current input source with the target rule. | `cocoa`, `objc`, `once_cell` |
 | `general_settings.rs` | Applies `auto_start` and `hide_dock_icon` settings, tray icon visibility, macOS LaunchAgent management. | `tauri tray`, `launchctl`, `std::process` |
 | `single_instance.rs` | Enforces one app instance via Unix domain socket and focuses existing main window on re-activation. | `std::os::unix::net`, `tauri` |
 | `error.rs` | Unified `AppError` model serialized to frontend-friendly strings. | `thiserror`, `serde` |
@@ -191,9 +191,9 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 #### Commands - Frontend calls Backend
 | Command Name | Payload | Return Value | Description |
 | :--- | :--- | :--- | :--- |
-| `cmd_get_system_input_sources` | None | `Result<Vec<InputSource>, AppError>` | Fetch currently enabled/selectable system input sources. |
-| `cmd_select_input_source` | `id: String` | `Result<(), AppError>` | Switch to a specific input source ID. |
-| `cmd_get_installed_apps` | None | `Result<Vec<SystemApp>, AppError>` | Scan installed apps under `/Applications` and `~/Applications`. |
+| `cmd_get_system_input_sources` | None | `Result<Vec<InputSource>, AppError>` | Fetch currently enabled/selectable system input sources on the main thread with system-localized display names when available. |
+| `cmd_select_input_source` | `id: String` | `Result<(), AppError>` | Switch to a specific input source ID on the main thread. |
+| `cmd_get_installed_apps` | None | `Result<Vec<SystemApp>, AppError>` | Scan installed apps under `/Applications`, `~/Applications`, `/System/Applications`, `/System/Cryptexes/App/System/Applications`, and `/System/Library/CoreServices`, then keep only curated input-capable system apps from system roots. |
 | `cmd_get_config` | None | `Result<AppConfig, AppError>` | Load app config from state/persistence. |
 | `cmd_has_config` | None | `Result<bool, AppError>` | Whether `config.json` exists. |
 | `cmd_save_config` | `config: AppConfig` | `Result<(), AppError>` | Save full config; apply general settings delta when changed. |
@@ -248,7 +248,8 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 6.  **Foreground app switching**
     *   `observer.rs` receives `NSWorkspaceDidActivateApplicationNotification`.
     *   Emits `app_focused` and resolves rule from in-memory cache.
-    *   Applies input source switch on the main thread with de-dup against last selected input.
+    *   Applies input source switch on the main thread after comparing the current system input source with the target rule.
+    *   No custom input-method indicator is emitted; automatic switching remains a silent background behavior.
 
 7.  **General settings application**
     *   Startup applies persisted general settings once in `setup()`.
@@ -302,13 +303,16 @@ type LLMConfig = {
   model: string
   base_url: string
 }
+
 ```
 
 ### 4.4 AI Prediction Module (Logic Design)
 
 1.  **Target app set**
-    *   Scan installed apps.
-    *   Filter out bundle IDs starting with `com.apple.` for prediction targets.
+    *   Scan user-installed apps plus macOS system-app roots including Cryptex Safari locations.
+    *   Keep all user-installed apps with non-empty name and bundle ID.
+    *   From system roots, keep only a curated allowlist of common input-capable Apple apps such as Safari, Terminal, TextEdit, Notes, Reminders, Mail, Messages, Calendar, and Finder.
+    *   Prefer localized display names from app resources when available; otherwise fall back to curated Simplified Chinese labels for supported system apps.
 2.  **Per-app prediction**
     *   Run one LLM call per app using current `LLMConfig`.
     *   Prompt includes available input source IDs/names and strict response format: output only one ID.
@@ -363,7 +367,8 @@ type LLMConfig = {
     *   RAII guard resets `is_rescanning` even on early-return errors.
 3.  **Main-thread boundaries**
     *   Input-source retrieval in rescan uses `run_on_main_thread` + timeout guard.
-    *   Observer-triggered input switching also runs on main thread with timeout and de-dup.
+    *   Frontend-exposed input-source commands (`get system`, `select`) also use the same main-thread scheduling helper.
+    *   Observer-triggered input switching runs on main thread with timeout and current-system-input comparison.
 
 ## 5. Build & Deployment
 

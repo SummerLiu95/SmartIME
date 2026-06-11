@@ -39,6 +39,15 @@ type TauriWindow = {
   __TAURI_INTERNALS__?: object;
 };
 
+const normalizeConfig = (config: AppConfig): AppConfig => ({
+  ...config,
+  general: {
+    auto_start: config.general?.auto_start ?? false,
+    hide_dock_icon: config.general?.hide_dock_icon ?? false,
+  },
+  rules: config.rules ?? [],
+});
+
 export const API = {
   /**
    * Tauri detection & safe invoke
@@ -100,7 +109,7 @@ export const API = {
     } as AppConfig,
     inputSources: [
       { id: "com.apple.keylayout.ABC", name: "ABC", category: "keyboard" },
-      { id: "com.apple.inputmethod.SCIM.ITABC", name: "Chinese - Simplified (Pinyin)", category: "inputmethod" },
+      { id: "com.apple.inputmethod.SCIM.ITABC", name: "简体拼音", category: "inputmethod" },
     ] as InputSource[],
     llm: {
       api_key: "",
@@ -224,11 +233,11 @@ export const API = {
     if (!API._isTauri()) {
       try {
         const raw = localStorage.getItem('smartime_config');
-        if (raw) return JSON.parse(raw);
+        if (raw) return normalizeConfig(JSON.parse(raw));
       } catch {}
-      return API._mock.config;
+      return normalizeConfig(API._mock.config);
     }
-    return API._invoke('cmd_get_config');
+    return normalizeConfig(await API._invoke('cmd_get_config'));
   },
 
   /**
