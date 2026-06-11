@@ -91,7 +91,7 @@ SmartIME/
 │   └── tauri.conf.json
 ├── .github/
 │   └── workflows/
-│       └── release-dmg.yml           # Tag-triggered universal DMG release workflow
+│       └── release-dmg.yml           # Tag-triggered Apple Silicon DMG release workflow
 ├── docs/
 │   ├── DESIGN_DOC.md                 # Product and UX design document
 │   ├── Rulebook.md                   # AI mistake-prevention notes and testing lessons
@@ -382,13 +382,16 @@ type LLMConfig = {
 
 1.  **Production Build**:
     ```bash
-    bun tauri build --target universal-apple-darwin
+    bun tauri build
     ```
-    This command builds the Next.js frontend (`next build` + static export), compiles Rust code for both Apple Silicon and Intel targets, and packages a universal DMG.
+    This command builds the Next.js frontend (`next build` + static export), compiles the Rust backend for the current Apple Silicon release target, and packages an Apple Silicon DMG.
 
 2.  **Artifact Location**:
-    Universal DMG artifact is generated at:
-    `src-tauri/target/universal-apple-darwin/release/bundle/dmg/SmartIME_<version>_universal.dmg`
+    Apple Silicon DMG artifact is generated at:
+    `src-tauri/target/release/bundle/dmg/SmartIME_<version>_aarch64.dmg`
+
+3.  **Universal Build Scope**:
+    Universal DMG packaging is not currently supported by the release pipeline. Intel (`x86_64`) support is tracked as future roadmap work rather than current distribution behavior.
 
 ### 5.3 Release & Distribution (GitHub Release + Homebrew Cask)
 
@@ -404,20 +407,20 @@ To support `brew install --cask` installation, distribution is based on Git tags
     *   `src-tauri/tauri.conf.json`
 
 3.  **CI Build and Publish Steps**:
-    *   Install Bun dependencies and Rust targets (`aarch64` + `x86_64`).
-    *   Run `bun tauri build --target universal-apple-darwin`.
+    *   Install Bun dependencies and Rust toolchain targets.
+    *   Run `bun tauri build`.
     *   Generate SHA256 checksum for DMG.
-    *   Publish DMG and checksum file to GitHub Release.
+    *   Publish `SmartIME_<version>_aarch64.dmg` and checksum file to GitHub Release.
 
 4.  **Define Cask (`Casks/smartime.rb`)**:
-    The cask in Tap repository should point to universal DMG:
+    The cask in Tap repository should point to the Apple Silicon DMG:
 
     ```ruby
     cask "smartime" do
       version "0.1.0"
       sha256 "<CHECKSUM_FROM_RELEASE_SHA256_FILE>"
 
-      url "https://github.com/<USERNAME>/SmartIME/releases/download/v#{version}/SmartIME_#{version}_universal.dmg"
+      url "https://github.com/<USERNAME>/SmartIME/releases/download/v#{version}/SmartIME_#{version}_aarch64.dmg"
       name "SmartIME"
       desc "Automatic input method switcher based on active app"
       homepage "https://github.com/<USERNAME>/SmartIME"
