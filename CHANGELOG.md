@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-11
+
+### Added
+- **System Apps Support**: Extended scanning, rule generation, rule management, and automatic input method switching to eligible macOS system applications.
+- **Localized Input Source Names**: Display input method names using macOS-localized labels, including a Simplified Chinese Pinyin fallback when the system label remains English.
+
+### Changed
+- **System App Discovery**: Limited system application scanning to a curated allowlist of common input-capable Apple apps.
+- **Input Source Runtime**: Marshaled current input-source reads onto the main thread to avoid HIToolbox/TIS thread-context crashes in bundled app builds.
+
+### Removed
+- **Custom Input Method Indicator**: Removed the experimental Tauri overlay indicator, its settings toggle, IPC surface, and related macOS private API feature usage.
+
 ## [1.0.1] - 2026-02-25
 
 ### Changed
