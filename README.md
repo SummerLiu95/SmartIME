@@ -38,10 +38,20 @@ brew install --cask smartime
 
 ## First-Run Setup
 
-1. Launch SmartIME.
-2. Complete Accessibility permission authorization in onboarding.
-3. Configure LLM settings (`API Key`, `Model`, `Base URL`) and run connection test.
-4. Start first scan to generate initial rules.
+SmartIME is currently a technical exploration project and does not ship with Apple Developer ID signing or Apple notarization. After installing from Homebrew or downloading the DMG, macOS Gatekeeper may report that `SmartIME.app` is damaged and cannot be opened.
+
+If this happens, remove the quarantine attribute manually before the first launch:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/SmartIME.app
+open /Applications/SmartIME.app
+```
+
+Then continue setup:
+
+1. Complete Accessibility permission authorization in onboarding.
+2. Configure LLM settings (`API Key`, `Model`, `Base URL`) and run connection test.
+3. Start first scan to generate initial rules.
 
 ## Development Setup
 
