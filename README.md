@@ -129,6 +129,7 @@ bun run lint
 Future development plans include but are not limited to:
 
 - [x] **System Apps Support**: Extend support to macOS system applications (e.g., Safari).
+- [ ] **Universal Build Support**: Support Intel chips (x86_64) to provide universal binary packaging.
 - [ ] ~~**Focus Indicator**: Display a visual indicator of the current input method when the input cursor is focused.~~
 - [ ] **Website-Based Switching**: Enable automatic input method switching in browsers based on the specific website being visited.
 - [ ] **Built-in Local Model**: Integrate a built-in tiny LLM or lightweight classification model to remove dependency on third-party API keys.
