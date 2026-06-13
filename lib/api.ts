@@ -10,6 +10,8 @@ export type InstalledApp = {
   path: string;
 };
 
+export type AppIconMap = Record<string, string>;
+
 export type AppRule = {
   bundle_id: string;
   app_name: string;
@@ -267,6 +269,16 @@ export const API = {
       ];
     }
     return API._invoke('cmd_get_installed_apps');
+  },
+
+  /**
+   * 获取应用真实图标，仅用于运行时展示，不持久化到配置
+   */
+  getAppIcons: async (bundleIds: string[]): Promise<AppIconMap> => {
+    if (!API._isTauri()) {
+      return {};
+    }
+    return API._invoke('cmd_get_app_icons', { bundleIds });
   },
 
   /**

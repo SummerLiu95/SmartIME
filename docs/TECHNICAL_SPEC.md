@@ -114,6 +114,7 @@ SmartIME/
 | `llm.rs` | LLM config/model client, config persistence (`llm_config.json`), connectivity checks, per-app prediction calls. | `reqwest`, `dotenvy`, `serde` |
 | `input_source.rs` | macOS input source discovery/filtering, system-localized display-name resolution, current input-source query, and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, AppKit `NSTextInputContext`, `defaults export` parsing |
 | `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist` |
+| `app_icon.rs` | Runtime macOS app icon lookup from installed bundle paths and PNG data URL conversion for Rules UI display. | `NSWorkspace`, `NSImage`, `NSBitmapImageRep` |
 | `observer.rs` | NSWorkspace active-app notifications, emits `app_focused`, and applies rules on main thread after comparing the current input source with the target rule. | `cocoa`, `objc`, `once_cell` |
 | `general_settings.rs` | Applies `auto_start` and `hide_dock_icon` settings, tray icon visibility, macOS LaunchAgent management. | `tauri tray`, `launchctl`, `std::process` |
 | `single_instance.rs` | Enforces one app instance via Unix domain socket and focuses existing main window on re-activation. | `std::os::unix::net`, `tauri` |
@@ -194,6 +195,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 | `cmd_get_system_input_sources` | None | `Result<Vec<InputSource>, AppError>` | Fetch currently enabled/selectable system input sources on the main thread with system-localized display names when available. |
 | `cmd_select_input_source` | `id: String` | `Result<(), AppError>` | Switch to a specific input source ID on the main thread. |
 | `cmd_get_installed_apps` | None | `Result<Vec<SystemApp>, AppError>` | Scan installed apps under `/Applications`, `~/Applications`, `/System/Applications`, `/System/Cryptexes/App/System/Applications`, and `/System/Library/CoreServices`, then keep only curated input-capable system apps from system roots. |
+| `cmd_get_app_icons` | `bundle_ids: Vec<String>` | `Result<HashMap<String, String>, AppError>` | Resolve installed app bundle paths by bundle ID, render their macOS icons to PNG data URLs on the main thread, and return only successfully resolved icons. |
 | `cmd_get_config` | None | `Result<AppConfig, AppError>` | Load app config from state/persistence. |
 | `cmd_has_config` | None | `Result<bool, AppError>` | Whether `config.json` exists. |
 | `cmd_save_config` | `config: AppConfig` | `Result<(), AppError>` | Save full config; apply general settings delta when changed. |
@@ -242,6 +244,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 
 5.  **Rules page lifecycle**
     *   Initial load calls `cmd_get_config`, `cmd_get_system_input_sources`, and `cmd_is_rescanning` concurrently.
+    *   After rules are known, request runtime app icons through `cmd_get_app_icons` using current rule bundle IDs. Icons are UI cache only and are not persisted to `config.json`.
     *   Manual rule edits persist with `cmd_save_rules`.
     *   Rescan calls `cmd_rescan_and_save_rules` and polls `cmd_is_rescanning` until false, then reloads config + input sources.
 
@@ -277,6 +280,8 @@ type SystemApp = {
   bundle_id: string
   path: string
 }
+
+type AppIconMap = Record<string, string> // bundle_id -> PNG data URL, runtime UI cache only
 
 type AppRule = {
   bundle_id: string

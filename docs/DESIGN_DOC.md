@@ -32,6 +32,7 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
 *   **App List (Rules Tab)**:
     *   Use `Table` or `Card` list to display all configured apps.
     *   **Columns**: App Icon | App Name | Preferred Input Method (Dropdown: Only display system enabled input methods) | Action (Delete).
+    *   **App icons**: Display the real macOS app icon for each rule when available, matching the icon shown by Finder, Launchpad, and System Settings. If the icon cannot be resolved, keep the existing rounded initial-letter fallback so the row remains visually stable.
     *   **Input method labels**: Dropdown labels should use macOS system-localized input source names, so Chinese systems show names such as "简体拼音" instead of English fallback labels like "Pinyin - Simplified" when the OS provides them.
     *   **System app scope**: Include a curated set of common input-capable macOS system apps, not every internal/background system bundle discovered under system directories. Prefer localized names for those system apps when available.
     *   **Top Bar**:

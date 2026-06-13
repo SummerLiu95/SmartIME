@@ -42,6 +42,43 @@ pub fn cmd_get_installed_apps() -> Result<Vec<SystemApp>> {
 }
 
 #[tauri::command]
+pub async fn cmd_get_app_icons(
+    bundle_ids: Vec<String>,
+    app: AppHandle,
+) -> Result<HashMap<String, String>> {
+    let requested_bundle_ids: HashSet<String> = bundle_ids
+        .into_iter()
+        .filter_map(|id| {
+            let id = id.trim().to_string();
+            (!id.is_empty()).then_some(id)
+        })
+        .collect();
+
+    if requested_bundle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let icon_targets = tauri::async_runtime::spawn_blocking(move || {
+        let icon_targets = crate::system_apps::get_installed_apps()?
+            .into_iter()
+            .filter(|app| requested_bundle_ids.contains(&app.bundle_id))
+            .map(|app| (app.bundle_id, app.path))
+            .collect();
+        Ok::<Vec<(String, std::path::PathBuf)>, AppError>(icon_targets)
+    })
+    .await
+    .map_err(|e| AppError::Config(format!("Failed to join app icon path scan: {e}")))??;
+
+    run_input_source_task_on_main_thread_async(
+        app,
+        "app icon lookup",
+        Duration::from_secs(5),
+        move || crate::app_icon::app_icon_data_urls(&icon_targets),
+    )
+    .await
+}
+
+#[tauri::command]
 pub fn cmd_save_config(
     config: AppConfig,
     state: State<'_, AppState>,

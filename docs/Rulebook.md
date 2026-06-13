@@ -260,6 +260,30 @@ Keep identity aligned across:
 2.  Open SmartIME Rules and inspect the input method dropdown.
 3.  Confirm the label follows the system-localized name, for example `简体拼音`, while rule values still store the original input source ID.
 
+### 3.13 Treating App Icons As Persisted Rule Data Or Ignoring Cocoa Ownership
+
+**Mistake**: Rendering placeholder initials for managed apps, storing large app icon payloads directly in persisted rule config, or forgetting Cocoa retain/release ownership when converting native icons to frontend-safe image data.
+
+**Why it is easy to miss**: Rule rows already have enough identity to function (`bundle_id` and `app_name`), so a placeholder can survive for a long time. The tempting quick fix is to attach icon data to `AppRule`, but that makes `config.json` larger and stale when apps move or update their icons. On the native side, Rust ownership does not automatically manage Objective-C objects created with `alloc/init`; an autorelease pool only drains objects that were actually autoreleased.
+
+**Correct behavior**:
+
+- Resolve app icons from the currently installed app bundle path at runtime.
+- Keep app icon data as a frontend display cache only.
+- Do not persist PNG/base64 icon data in `config.json`.
+- When using Cocoa APIs from Rust, balance `alloc/init`, `copy`, `new`, or `mutableCopy` ownership with explicit `release` or `autorelease` after copied Rust-owned bytes are produced.
+- Wrap repeated native rendering work in an `NSAutoreleasePool`, but do not treat the pool as a substitute for marking owned objects as autoreleased.
+- If icon lookup fails, keep a stable fallback avatar and preserve rule editing behavior.
+- Validate with a bundled app because Finder/System app icon resolution is a macOS integration behavior.
+
+**Test method**:
+
+1.  Build and launch the bundled `.app`.
+2.  Open SmartIME Rules and confirm common third-party apps and supported system apps show their real macOS icons.
+3.  Confirm a missing or unresolved app icon falls back to the initial-letter avatar without blocking input-method selection, deletion, or rescan.
+4.  Inspect `config.json` and confirm rules still contain only stable rule fields, not icon data URLs.
+5.  Repeatedly revisit Rules or trigger rescans and confirm native memory does not grow monotonically from leaked retained Cocoa objects.
+
 ## 4. Incident Catalog
 
 | Incident ID | AI-prone mistake | What Happened | Corrective Lesson | Regression Test |
@@ -274,6 +298,7 @@ Keep identity aligned across:
 | INC-008 | Calling current-input-source APIs off the main thread | Current-input-source reads in app-switch handling crashed bundled app with `EXC_BREAKPOINT` / `dispatch_assert_queue` inside `TISCopyCurrentKeyboardInputSource`. | HIToolbox current-input-source reads must be marshaled to the main thread just like input-source selection. | Rapid app switching on bundled app should not crash while automatic switching continues to work. |
 | INC-009 | Blocking a sync command after scheduling main-thread TIS work | Frontend-facing input-source commands could enqueue TIS work back to the main thread and then wait synchronously, risking a timeout because the queued task could not run until the command returned. | Make frontend TIS commands async and move the channel wait into `tauri::async_runtime::spawn_blocking`, while keeping the actual TIS call in `run_on_main_thread`. | Load input sources, manually select an input source, and run onboarding/manual rescans without 500ms or 5s main-thread timeout errors. |
 | INC-010 | Trusting TIS localized names as final UI labels | Built-in input methods could show English fallback labels such as `Pinyin - Simplified` instead of the system-localized label users see in macOS. | Prefer AppKit input-source localized names, use a locale-gated built-in Apple fallback for known English labels, and fall back to TIS only when needed. | On a Chinese macOS system, Rules dropdown should show `简体拼音` or the current system-localized equivalent for Simplified Pinyin. |
+| INC-011 | Treating app icons as persisted rule data or ignoring Cocoa ownership | Rule rows showed initial-letter placeholders instead of the same app icons users see in macOS, and review found the native rendering path initially leaked retained Objective-C objects. | Resolve real app icons from installed bundle paths at runtime, keep icon payloads out of persisted rules, fall back visually when lookup fails, and explicitly release/autorelease Cocoa objects created with ownership transfer. | In the bundled app, Rules rows should show real icons, `config.json` remains free of icon data, and repeated Rules visits/rescans should not leak native image memory. |
 
 ## 5. Testing Methods AI Should Prefer
 
@@ -317,9 +342,10 @@ Run this matrix on a bundled app before release:
 1.  Permission onboarding: request-only and check-only actions are independent.
 2.  First scan output: app list and input method options match current system state.
 3.  Input method labels: options use system-localized display names while persisted values remain stable source IDs.
-4.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
-5.  System app scope: curated input-capable Apple apps appear with recognizable names; internal/system utility bundles stay hidden.
-6.  Input-source stability: repeated automatic input-source switches do not crash the app, current-input-source reads do not leave the main thread, and frontend input-source commands do not time out while waiting for main-thread TIS work.
-7.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
-8.  Login item behavior: startup works without duplicate process/icon side effects.
-9.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.
+4.  Rule app icons: installed app rows show real macOS icons, unresolved icons fall back cleanly, `config.json` does not persist icon payloads, and repeated icon loads do not leak retained Cocoa objects.
+5.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
+6.  System app scope: curated input-capable Apple apps appear with recognizable names; internal/system utility bundles stay hidden.
+7.  Input-source stability: repeated automatic input-source switches do not crash the app, current-input-source reads do not leave the main thread, and frontend input-source commands do not time out while waiting for main-thread TIS work.
+8.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
+9.  Login item behavior: startup works without duplicate process/icon side effects.
+10.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.

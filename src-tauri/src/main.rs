@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_icon;
 mod command;
 mod config;
 mod error;
@@ -73,6 +74,7 @@ fn main() {
             command::cmd_get_system_input_sources,
             command::cmd_select_input_source,
             command::cmd_get_installed_apps,
+            command::cmd_get_app_icons,
             command::cmd_save_config,
             command::cmd_save_rules,
             command::cmd_get_config,

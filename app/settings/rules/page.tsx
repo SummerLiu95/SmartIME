@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { API, AppConfig, InputSource } from "@/lib/api";
+import { API, AppConfig, AppIconMap, InputSource } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Search, Trash2 } from "lucide-react";
 import { InputMethodSelector } from "@/components/settings/rules/input-method-selector";
@@ -27,6 +28,7 @@ export default function RulesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRescanning, setIsRescanning] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [appIcons, setAppIcons] = useState<AppIconMap>({});
   const isMountedRef = useRef(false);
 
   useEffect(() => {
@@ -108,6 +110,11 @@ export default function RulesPage() {
 
   const rules = useMemo(() => config.rules ?? [], [config]);
 
+  const ruleBundleKey = useMemo(
+    () => rules.map((rule) => rule.bundle_id).join("\n"),
+    [rules]
+  );
+
   const filteredRules = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return rules;
@@ -116,6 +123,36 @@ export default function RulesPage() {
       rule.bundle_id.toLowerCase().includes(keyword)
     );
   }, [rules, search]);
+
+  useEffect(() => {
+    if (!ruleBundleKey) {
+      setAppIcons({});
+      return;
+    }
+
+    let isCurrent = true;
+    const bundleIds = ruleBundleKey.split("\n").filter(Boolean);
+
+    const loadIcons = async () => {
+      try {
+        const icons = await API.getAppIcons(bundleIds);
+        if (isCurrent && isMountedRef.current) {
+          setAppIcons(icons);
+        }
+      } catch (error) {
+        console.error("Failed to load app icons", error);
+        if (isCurrent && isMountedRef.current) {
+          setAppIcons({});
+        }
+      }
+    };
+
+    loadIcons();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [ruleBundleKey]);
 
   const handleSaveRules = async (nextRules: AppConfig["rules"]) => {
     if (isMountedRef.current) {
@@ -257,6 +294,7 @@ export default function RulesPage() {
             </div>
           ) : (
             filteredRules.map((rule) => {
+              const iconSrc = appIcons[rule.bundle_id];
               return (
                 <div 
                   key={rule.bundle_id}
@@ -264,9 +302,20 @@ export default function RulesPage() {
                 >
                   {/* App Icon */}
                   <div className="w-[130px] pl-2">
-                    <div className="w-10 h-10 rounded-[14px] bg-white dark:bg-zinc-800 border border-[#e4e4e7] dark:border-zinc-700 flex items-center justify-center text-xl shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]">
-                      {/* Placeholder for app icon - in real app we'd fetch icon */}
-                      {rule.app_name.charAt(0).toUpperCase()}
+                    <div className="w-10 h-10 rounded-[14px] bg-white dark:bg-zinc-800 border border-[#e4e4e7] dark:border-zinc-700 flex items-center justify-center overflow-hidden text-xl shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]">
+                      {iconSrc ? (
+                        <Image
+                          src={iconSrc}
+                          alt=""
+                          width={40}
+                          height={40}
+                          unoptimized
+                          className="h-full w-full object-cover"
+                          draggable={false}
+                        />
+                      ) : (
+                        rule.app_name.charAt(0).toUpperCase()
+                      )}
                     </div>
                   </div>
 

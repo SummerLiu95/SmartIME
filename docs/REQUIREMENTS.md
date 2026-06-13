@@ -152,6 +152,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 *   **FR-05 Rule Management**:
     *   Provide a visual list allowing users to search applications, and delete rules.
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
+    *   The Rules list should display each managed app with its real macOS application icon when available. If icon loading fails or the app cannot be resolved, the UI must keep a stable fallback avatar and must not block rule editing.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Unmatched App Policy**:
     *   Unmatched applications use fixed behavior: keep current input source unchanged.
@@ -172,6 +173,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   In both first-run onboarding scan and later manual rescans, the in-app application list must reflect current installed applications in `/Applications` and `~/Applications`.
     *   In both first-run onboarding scan and later manual rescans, the in-app input method list must reflect current enabled system input sources.
     *   Input method names shown in the UI must use the same system-localized display names as macOS when available, while persisted rules continue to store stable input source IDs.
+    *   App icons shown in the Rules list should be resolved from current installed app bundle paths at runtime and should not be persisted in `config.json`.
     *   Input methods removed from the system must be pruned from in-app selectable options and rule data.
 *   **FR-12 Single-Instance Reactivation Semantics**:
     *   All app entry points (launch, Dock icon, tray icon, login-item startup) must resolve to one running process.
