@@ -20,7 +20,7 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
         *   `Model *`: Text input box (Input), default placeholder "gpt-4o".
         *   `Base URL`: Text input box, default placeholder "https://api.openai.com/v1".
     *   **Action**: "Test Connection" button (Loading state feedback) -> Show "Start Scanning" button upon success.
-*   **Step 3: Scan & Generate**: Progress bar displays application scanning and AI analysis progress.
+*   **Step 3: Scan & Generate**: Progress display should reflect real phases such as app discovery, input source loading, AI rule generation, and saving. Avoid a fixed fake percentage that can appear stuck while waiting for long-running LLM work. Very fast phases may use a short minimum display duration so users can perceive the transition without delaying long-running work.
 
 #### B. Main Settings Panel (Main Window)
 *   **Tabs**:
@@ -32,13 +32,14 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
 *   **App List (Rules Tab)**:
     *   Use `Table` or `Card` list to display all configured apps.
     *   **Columns**: App Icon | App Name | Preferred Input Method (Dropdown: Only display system enabled input methods) | Action (Delete).
+    *   **App names**: Display the localized app name that macOS shows for the installed app when available, for example Chinese systems should prefer names such as "微信" or "阿里云盘" over bundle fallback names such as "WeChat" or "aDrive".
     *   **App icons**: Display the real macOS app icon for each rule when available, matching the icon shown by Finder, Launchpad, and System Settings. If the icon cannot be resolved, keep the existing rounded initial-letter fallback so the row remains visually stable.
     *   **Input method labels**: Dropdown labels should use macOS system-localized input source names, so Chinese systems show names such as "简体拼音" instead of English fallback labels like "Pinyin - Simplified" when the OS provides them.
     *   **System app scope**: Include a curated set of common input-capable macOS system apps, not every internal/background system bundle discovered under system directories. Prefer localized names for those system apps when available.
     *   **Top Bar**:
         *   **Search Bar** (placeholder: "搜索应用...") to quickly filter apps.
         *   **Rescan Button** on the right ("重新扫描") to trigger re-scan + AI prediction.
-        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning.
+        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning. Status text should make clear whether SmartIME is discovering apps, generating rules, or syncing cached rules.
     *   *Animation*: Addition/Deletion of list items should trigger **Layout Animation** (like `layout` prop), making surrounding elements rearrange smoothly instead of instant jumping.
 *   **Footer**: Status bar, displaying "AI Prediction Enabled" or "Rules Synced".
 *   **General Settings Tab**:

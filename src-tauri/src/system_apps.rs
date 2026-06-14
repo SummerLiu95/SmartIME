@@ -1,6 +1,19 @@
+#![allow(deprecated)] // Keep using the existing cocoa/objc bridge until the project migrates to objc2.
+
 use crate::error::Result;
+#[cfg(target_os = "macos")]
+use cocoa::base::{id, nil};
+#[cfg(target_os = "macos")]
+use cocoa::foundation::{NSAutoreleasePool, NSString};
+#[cfg(target_os = "macos")]
+use objc::{class, msg_send, sel, sel_impl};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+#[cfg(target_os = "macos")]
+use std::ffi::CStr;
+use std::fs;
+#[cfg(target_os = "macos")]
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
@@ -59,9 +72,12 @@ const ZH_HANS_SYSTEM_APP_NAMES: &[(&str, &str)] = &[
 ];
 
 const LOCALIZED_INFO_PLIST_DIRS: &[&str] = &[
-    "zh_CN.lproj",
     "zh-Hans.lproj",
+    "zh_CN.lproj",
+    "zh-Hans-CN.lproj",
     "zh.lproj",
+    "zh-Hant.lproj",
+    "zh_TW.lproj",
     "Base.lproj",
     "en.lproj",
 ];
@@ -120,14 +136,12 @@ fn parse_app_plist(app_path: &Path) -> Option<SystemApp> {
         return None;
     }
 
-    let name = localized_app_name(app_path, &bundle_id)
-        .or(app_plist.display_name)
-        .or(app_plist.bundle_name)
-        .or_else(|| {
-            app_path
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().to_string())
-        })?;
+    let system_name = system_display_name(app_path);
+    let localized_name = localized_app_name(app_path, &bundle_id);
+    let name = preferred_app_name(app_path, system_name, localized_name)
+        .or_else(|| clean_app_name(app_plist.display_name))
+        .or_else(|| clean_app_name(app_plist.bundle_name))
+        .or_else(|| path_stem_app_name(app_path))?;
 
     Some(SystemApp {
         name,
@@ -136,9 +150,67 @@ fn parse_app_plist(app_path: &Path) -> Option<SystemApp> {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn system_display_name(app_path: &Path) -> Option<String> {
+    let path = app_path.to_str()?;
+
+    unsafe {
+        let pool = NSAutoreleasePool::new(nil);
+        let result = system_display_name_with_pool(path);
+        let _: () = msg_send![pool, drain];
+        result
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn system_display_name_with_pool(path: &str) -> Option<String> {
+    let path = NSString::alloc(nil).init_str(path);
+    let _: id = msg_send![path, autorelease];
+    let file_manager: id = msg_send![class!(NSFileManager), defaultManager];
+    if file_manager == nil {
+        return None;
+    }
+
+    let display_name: id = msg_send![file_manager, displayNameAtPath: path];
+    ns_string_to_string(display_name).and_then(|name| clean_app_name(Some(name)))
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn ns_string_to_string(value: id) -> Option<String> {
+    if value == nil {
+        return None;
+    }
+
+    let utf8: *const c_char = msg_send![value, UTF8String];
+    if utf8.is_null() {
+        return None;
+    }
+
+    CStr::from_ptr(utf8).to_str().ok().map(str::to_string)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_display_name(_app_path: &Path) -> Option<String> {
+    None
+}
+
 fn localized_app_name(app_path: &Path, bundle_id: &str) -> Option<String> {
     localized_name_from_info_plist_strings(app_path)
         .or_else(|| zh_hans_system_app_name(bundle_id).map(str::to_string))
+}
+
+fn preferred_app_name(
+    app_path: &Path,
+    system_name: Option<String>,
+    localized_name: Option<String>,
+) -> Option<String> {
+    match (system_name, localized_name) {
+        (Some(system_name), Some(localized_name)) if is_plain_path_stem(app_path, &system_name) => {
+            Some(localized_name)
+        }
+        (Some(system_name), _) => Some(system_name),
+        (None, localized_name) => localized_name,
+    }
 }
 
 fn localized_name_from_info_plist_strings(app_path: &Path) -> Option<String> {
@@ -152,11 +224,7 @@ fn localized_name_from_info_plist_strings(app_path: &Path) -> Option<String> {
             continue;
         }
 
-        let Ok(localized) = plist::from_file::<_, LocalizedAppPlist>(&path) else {
-            continue;
-        };
-        let name = localized.display_name.or(localized.bundle_name)?;
-        if !name.trim().is_empty() {
+        if let Some(name) = localized_name_from_info_plist_strings_file(&path) {
             return Some(name);
         }
     }
@@ -164,10 +232,121 @@ fn localized_name_from_info_plist_strings(app_path: &Path) -> Option<String> {
     None
 }
 
+fn localized_name_from_info_plist_strings_file(path: &Path) -> Option<String> {
+    if let Ok(localized) = plist::from_file::<_, LocalizedAppPlist>(path) {
+        if let Some(name) = clean_app_name(localized.display_name.or(localized.bundle_name)) {
+            return Some(name);
+        }
+    }
+
+    let content = read_strings_file(path)?;
+    parse_strings_value(&content, "CFBundleDisplayName")
+        .or_else(|| parse_strings_value(&content, "CFBundleName"))
+        .and_then(|name| clean_app_name(Some(name)))
+}
+
+fn read_strings_file(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        return decode_utf16_bytes(&bytes[2..], Utf16Endian::Little);
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        return decode_utf16_bytes(&bytes[2..], Utf16Endian::Big);
+    }
+    if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        return String::from_utf8(bytes[3..].to_vec()).ok();
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
+enum Utf16Endian {
+    Little,
+    Big,
+}
+
+fn decode_utf16_bytes(bytes: &[u8], endian: Utf16Endian) -> Option<String> {
+    let mut chunks = bytes.chunks_exact(2);
+    let units = chunks
+        .by_ref()
+        .map(|chunk| match endian {
+            Utf16Endian::Little => u16::from_le_bytes([chunk[0], chunk[1]]),
+            Utf16Endian::Big => u16::from_be_bytes([chunk[0], chunk[1]]),
+        })
+        .collect::<Vec<_>>();
+    if !chunks.remainder().is_empty() {
+        return None;
+    }
+
+    String::from_utf16(&units).ok()
+}
+
+fn parse_strings_value(content: &str, key: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("//") || line.starts_with("/*") {
+            continue;
+        }
+
+        let Some((raw_key, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if parse_strings_token(raw_key.trim()).as_deref() != Some(key) {
+            continue;
+        }
+
+        let raw_value = raw_value.trim().trim_end_matches(';').trim();
+        if let Some(value) = parse_strings_token(raw_value) {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
+fn parse_strings_token(token: &str) -> Option<String> {
+    let token = token.trim();
+    let token = token
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(token);
+    let value = token
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+        .replace("\\n", "\n");
+
+    (!value.trim().is_empty()).then_some(value)
+}
+
 fn zh_hans_system_app_name(bundle_id: &str) -> Option<&'static str> {
     ZH_HANS_SYSTEM_APP_NAMES
         .iter()
         .find_map(|(id, name)| (*id == bundle_id).then_some(*name))
+}
+
+fn clean_app_name(name: Option<String>) -> Option<String> {
+    let mut name = name?.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+
+    if let Some(stripped) = name.strip_suffix(".app") {
+        name = stripped.trim().to_string();
+    }
+
+    (!name.is_empty()).then_some(name)
+}
+
+fn path_stem_app_name(app_path: &Path) -> Option<String> {
+    clean_app_name(
+        app_path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string()),
+    )
+}
+
+fn is_plain_path_stem(app_path: &Path, name: &str) -> bool {
+    path_stem_app_name(app_path).is_some_and(|stem| stem.eq_ignore_ascii_case(name))
 }
 
 fn is_input_capable_system_app(bundle_id: &str) -> bool {
@@ -343,6 +522,18 @@ mod tests {
                 app.name, app.bundle_id, app.path
             );
         }
+        for bundle_id in [
+            "com.bot.pc.doubao",
+            "com.netease.163music",
+            "com.tencent.xinWeChat",
+        ] {
+            if let Some(app) = apps.iter().find(|app| app.bundle_id == bundle_id) {
+                println!(
+                    "Localized app check: {} ({}) at {:?}",
+                    app.name, app.bundle_id, app.path
+                );
+            }
+        }
     }
 
     #[test]
@@ -413,5 +604,128 @@ mod tests {
         assert!(!apps.iter().any(|app| app.bundle_id == "com.apple.Siri"));
 
         fs::remove_dir_all(temp_root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn preferred_app_name_uses_localized_name_when_system_name_is_only_path_stem() {
+        let app_path = PathBuf::from("/Applications/WeChat.app");
+        let name = preferred_app_name(
+            &app_path,
+            Some("WeChat".to_string()),
+            Some("微信".to_string()),
+        );
+
+        assert_eq!(name, Some("微信".to_string()));
+    }
+
+    #[test]
+    fn preferred_app_name_treats_path_stem_case_changes_as_unlocalized() {
+        let app_path = PathBuf::from("/Applications/doubao.app");
+        let name = preferred_app_name(
+            &app_path,
+            Some("Doubao".to_string()),
+            Some("豆包".to_string()),
+        );
+
+        assert_eq!(name, Some("豆包".to_string()));
+
+        let app_path = PathBuf::from("/Applications/NeteaseMusic.app");
+        let name = preferred_app_name(
+            &app_path,
+            Some("NetEaseMusic".to_string()),
+            Some("网易云音乐".to_string()),
+        );
+
+        assert_eq!(name, Some("网易云音乐".to_string()));
+    }
+
+    #[test]
+    fn preferred_app_name_uses_system_name_when_it_is_localized() {
+        let app_path = PathBuf::from("/Applications/WeChat.app");
+        let name = preferred_app_name(
+            &app_path,
+            Some("微信".to_string()),
+            Some("WeChat".to_string()),
+        );
+
+        assert_eq!(name, Some("微信".to_string()));
+    }
+
+    #[test]
+    fn clean_app_name_strips_bundle_extension_from_display_names() {
+        assert_eq!(
+            clean_app_name(Some("aDrive.app".to_string())),
+            Some("aDrive".to_string())
+        );
+        assert_eq!(clean_app_name(Some("  ".to_string())), None);
+    }
+
+    #[test]
+    fn parse_strings_value_prefers_display_name() {
+        let content = r#"
+            "CFBundleName" = "aDrive";
+            "CFBundleDisplayName" = "阿里云盘";
+        "#;
+
+        assert_eq!(
+            parse_strings_value(content, "CFBundleDisplayName"),
+            Some("阿里云盘".to_string())
+        );
+    }
+
+    #[test]
+    fn localized_name_from_text_info_plist_strings_falls_back_to_bundle_name() {
+        let temp_root = unique_temp_dir();
+        let strings_path = temp_root.join("InfoPlist.strings");
+        fs::write(
+            &strings_path,
+            r#"
+            "CFBundleName" = "微信.app";
+            "#,
+        )
+        .expect("write strings file");
+
+        let name = localized_name_from_info_plist_strings_file(&strings_path);
+
+        assert_eq!(name, Some("微信".to_string()));
+        fs::remove_dir_all(temp_root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn localized_name_from_utf16_info_plist_strings_is_supported() {
+        let temp_root = unique_temp_dir();
+        let strings_path = temp_root.join("InfoPlist.strings");
+        let content = r#""CFBundleDisplayName" = "网易云音乐";"#;
+        let mut bytes = vec![0xff, 0xfe];
+        for unit in content.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        fs::write(&strings_path, bytes).expect("write utf16 strings file");
+
+        let name = localized_name_from_info_plist_strings_file(&strings_path);
+
+        assert_eq!(name, Some("网易云音乐".to_string()));
+        fs::remove_dir_all(temp_root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn installed_chinese_app_names_are_localized_when_resources_exist() {
+        let cases = [
+            (PathBuf::from("/Applications/doubao.app"), "豆包"),
+            (
+                PathBuf::from("/Applications/NeteaseMusic.app"),
+                "网易云音乐",
+            ),
+            (PathBuf::from("/Applications/WeChat.app"), "微信"),
+        ];
+
+        for (path, expected_name) in cases {
+            if !path.exists() {
+                continue;
+            }
+
+            let app = parse_app_plist(&path).expect("parse installed app plist");
+            assert_eq!(app.name, expected_name, "unexpected name for {path:?}");
+        }
     }
 }

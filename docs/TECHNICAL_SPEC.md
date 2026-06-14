@@ -111,9 +111,9 @@ SmartIME/
 | `main.rs` | Tauri app bootstrap, global state registration, command binding, startup integration, close/reopen lifecycle. | `tauri`, `tauri-plugin-log`, `tauri-plugin-store` |
 | `command.rs` | IPC command layer for input sources, config, LLM operations, scanning, rescan lifecycle, and permissions. | `tauri::command`, `AppState` |
 | `config.rs` | Core config data models and JSON persistence (`config.json`) plus in-memory rule cache (`HashMap`). | `serde`, `serde_json`, `dirs`, `std::fs` |
-| `llm.rs` | LLM config/model client, config persistence (`llm_config.json`), connectivity checks, per-app prediction calls. | `reqwest`, `dotenvy`, `serde` |
+| `llm.rs` | LLM config/model client, config persistence (`llm_config.json`), connectivity checks, batch rule prediction calls, and response validation helpers. | `reqwest`, `dotenvy`, `serde` |
 | `input_source.rs` | macOS input source discovery/filtering, system-localized display-name resolution, current input-source query, and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, AppKit `NSTextInputContext`, `defaults export` parsing |
-| `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist` |
+| `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; localized app display-name resolution; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist`, `NSFileManager` |
 | `app_icon.rs` | Runtime macOS app icon lookup from installed bundle paths and PNG data URL conversion for Rules UI display. | `NSWorkspace`, `NSImage`, `NSBitmapImageRep` |
 | `observer.rs` | NSWorkspace active-app notifications, emits `app_focused`, and applies rules on main thread after comparing the current input source with the target rule. | `cocoa`, `objc`, `once_cell` |
 | `general_settings.rs` | Applies `auto_start` and `hide_dock_icon` settings, tray icon visibility, macOS LaunchAgent management. | `tauri tray`, `launchctl`, `std::process` |
@@ -203,8 +203,8 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 | `cmd_get_llm_config` | None | `Result<LLMConfig, AppError>` | Load LLM config (API key masked as `******` when present). |
 | `cmd_save_llm_config` | `config: LLMConfig` | `Result<(), AppError>` | Save LLM config to persistent file. |
 | `cmd_check_llm_connection` | `config: LLMConfig` | `Result<bool, AppError>` | Validate LLM endpoint/auth by test request. |
-| `cmd_scan_and_predict` | `input_sources: Vec<InputSource>` | `Result<Vec<AppRule>, AppError>` | Predict rules for target apps using provided input source list. |
-| `cmd_rescan_and_save_rules` | None | `Result<Vec<AppRule>, AppError>` | Background-safe rescan + align + persist (single in-flight). |
+| `cmd_scan_and_predict` | `input_sources: Vec<InputSource>` | `Result<Vec<AppRule>, AppError>` | Discover target apps and generate initial rules, preferring batch LLM prediction and validating every returned rule against the provided input source list. |
+| `cmd_rescan_and_save_rules` | None | `Result<Vec<AppRule>, AppError>` | Background-safe rescan + align + persist (single in-flight), reusing existing valid manual and AI rules and predicting only missing/new/invalid rule gaps. |
 | `cmd_is_rescanning` | None | `bool` | Query whether backend rescan task is currently running. |
 | `cmd_check_permissions` | None | `bool` | Accessibility permission check only (no prompt). |
 | `cmd_request_permissions` | None | `bool` | Trigger native Accessibility authorization prompt. |
@@ -239,6 +239,8 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 4.  **Initial scan bootstrap (`/onboarding/scan`)**
     *   Fetch input sources via `cmd_get_system_input_sources`.
     *   Call `cmd_scan_and_predict(input_sources)`.
+    *   Backend discovers target apps and requests batch LLM prediction for the target set where possible.
+    *   Frontend progress should present real phases; the scan UI must not imply exact per-app completion when the backend is waiting for a single batch LLM response.
     *   Build initial config (`global_switch=true`, `general.auto_start=false`, `general.hide_dock_icon=false`) and persist via `cmd_save_config`.
     *   Redirect to startup gate (`/`) then to `/settings/rules`.
 
@@ -247,6 +249,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   After rules are known, request runtime app icons through `cmd_get_app_icons` using current rule bundle IDs. Icons are UI cache only and are not persisted to `config.json`.
     *   Manual rule edits persist with `cmd_save_rules`.
     *   Rescan calls `cmd_rescan_and_save_rules` and polls `cmd_is_rescanning` until false, then reloads config + input sources.
+    *   Rescan keeps valid existing manual and AI rules, prunes stale apps, normalizes invalid input source IDs, and calls LLM only for apps still missing a valid rule.
 
 6.  **Foreground app switching**
     *   `observer.rs` receives `NSWorkspaceDidActivateApplicationNotification`.
@@ -285,7 +288,7 @@ type AppIconMap = Record<string, string> // bundle_id -> PNG data URL, runtime U
 
 type AppRule = {
   bundle_id: string
-  app_name: string
+  app_name: string // Latest localized display-name snapshot from scan/rescan; bundle_id remains the matching key.
   preferred_input: string
   is_ai_generated: boolean
 }
@@ -317,17 +320,21 @@ type LLMConfig = {
     *   Scan user-installed apps plus macOS system-app roots including Cryptex Safari locations.
     *   Keep all user-installed apps with non-empty name and bundle ID.
     *   From system roots, keep only a curated allowlist of common input-capable Apple apps such as Safari, Terminal, TextEdit, Notes, Reminders, Mail, Messages, Calendar, and Finder.
-    *   Prefer localized display names from app resources when available; otherwise fall back to curated Simplified Chinese labels for supported system apps.
-2.  **Per-app prediction**
-    *   Run one LLM call per app using current `LLMConfig`.
-    *   Prompt includes available input source IDs/names and strict response format: output only one ID.
+    *   Prefer the localized app display name that macOS exposes for the installed bundle when available.
+    *   If the system display name is only the plain `.app` filename, continue checking localized app resources before falling back to curated Simplified Chinese labels for supported system apps.
+2.  **Batch prediction**
+    *   Prefer one batch LLM call for a set of target apps using current `LLMConfig`.
+    *   Prompt includes available input source IDs/names and target apps (`name`, `bundle_id`).
+    *   Response format should be strict JSON mapping bundle IDs to input source IDs.
+    *   If a provider response cannot be parsed or validated, the caller may retry in smaller batches or fall back to deterministic fallback rules rather than blocking indefinitely on per-app serial calls.
 3.  **Validation**
-    *   If returned ID is not in `input_sources`, treat as invalid prediction (error).
-    *   Per-app prediction failures are logged and skipped; pipeline continues for other apps.
+    *   If returned ID is not in `input_sources`, treat that app prediction as invalid.
+    *   Ignore unknown returned bundle IDs and missing entries.
+    *   Prediction failures are logged and skipped; pipeline continues for other apps.
 4.  **Rule alignment**
     *   Preserve manual rules (`is_ai_generated == false`) first.
-    *   Apply generated AI rules next.
-    *   Reuse existing rules where still relevant.
+    *   Reuse existing valid rules, including AI-generated rules, where still relevant.
+    *   Apply newly generated AI rules only for apps with no valid existing rule.
     *   Create fallback AI rule with first available input source if no rule exists.
 5.  **Normalization**
     *   Any rule referencing removed/invalid input source ID is rewritten to fallback first input source.

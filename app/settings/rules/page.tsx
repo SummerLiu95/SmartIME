@@ -261,7 +261,7 @@ export default function RulesPage() {
           >
             {isRescanning ? (
               <span className="inline-flex items-center">
-                扫描中
+                同步中
                 <span className="ml-1 inline-flex items-center gap-1" aria-hidden>
                   <span className="loading-dot" />
                   <span className="loading-dot loading-dot-2" />
@@ -349,8 +349,12 @@ export default function RulesPage() {
         </div>
 
         {/* Bottom Indicator */}
-        <div className="flex items-center justify-between px-6 h-8 border-t border-[#f4f4f5] dark:border-zinc-800/50 text-xs text-[#a1a1aa]">
-          <span>{rules.length} 个受管应用</span>
+        <div className="flex items-center justify-between gap-4 px-6 h-8 border-t border-[#f4f4f5] dark:border-zinc-800/50 text-xs text-[#a1a1aa]">
+          <span className="min-w-0 truncate">
+            {isRescanning
+              ? "正在复用已有规则并生成缺失规则..."
+              : `${rules.length} 个受管应用`}
+          </span>
           <span>{appVersion ? `v${appVersion}` : "v--"}</span>
         </div>
       </div>

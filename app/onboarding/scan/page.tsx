@@ -7,46 +7,112 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
-type ScanPhase = "scanning" | "analyzing" | "generated" | "error";
+type ScanPhase =
+  | "loadingInputSources"
+  | "generatingRules"
+  | "savingConfig"
+  | "generated"
+  | "error";
+
+const MIN_PHASE_DURATION_MS = 500;
+
+const wait = (duration: number) =>
+  new Promise((resolve) => window.setTimeout(resolve, duration));
 
 export default function ScanOnboardingPage() {
   const router = useRouter();
-  const [phase, setPhase] = useState<ScanPhase>("scanning");
+  const [phase, setPhase] = useState<ScanPhase>("loadingInputSources");
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [scanAttempt, setScanAttempt] = useState(0);
 
   const statusText = useMemo(() => {
-    if (phase === "error") return "生成失败";
-    if (phase === "generated") return "生成完成";
-    if (phase === "analyzing") return "分析中...";
-    return "扫描中...";
+    switch (phase) {
+      case "loadingInputSources":
+        return "读取输入法";
+      case "generatingRules":
+        return "批量生成规则";
+      case "savingConfig":
+        return "保存配置";
+      case "generated":
+        return "生成完成";
+      case "error":
+        return "生成失败";
+    }
+  }, [phase]);
+
+  const descriptionText = useMemo(() => {
+    switch (phase) {
+      case "loadingInputSources":
+        return "正在读取系统输入法与键盘布局...";
+      case "generatingRules":
+        return "正在批量生成输入法规则...";
+      case "savingConfig":
+        return "正在保存规则与基础配置...";
+      case "generated":
+        return "规则已生成，SmartIME 已准备就绪";
+      case "error":
+        return "扫描或生成规则时遇到问题";
+    }
+  }, [phase]);
+
+  const actionLabel = useMemo(() => {
+    switch (phase) {
+      case "loadingInputSources":
+        return "读取输入法中...";
+      case "generatingRules":
+        return "批量生成规则中...";
+      case "savingConfig":
+        return "保存配置中...";
+      case "generated":
+        return "开启 SmartIME 之旅";
+      case "error":
+        return "重试扫描";
+    }
   }, [phase]);
 
   useEffect(() => {
-    setPhase("scanning");
+    setPhase("loadingInputSources");
     setProgress(0);
     setErrorMessage("");
 
     let active = true;
-    let localProgress = 0;
-    const timer = setInterval(() => {
+    const updatePhase = (nextPhase: ScanPhase, nextProgress: number) => {
       if (!active) return;
-      const increment = Math.random() * 6 + 4;
-      localProgress = Math.min(localProgress + increment, 88);
-      setProgress(Math.round(localProgress));
-      if (localProgress > 45) {
-        setPhase("analyzing");
+      setPhase(nextPhase);
+      setProgress(nextProgress);
+    };
+
+    const runVisiblePhase = async <T,>(
+      nextPhase: ScanPhase,
+      nextProgress: number,
+      task: () => Promise<T>
+    ) => {
+      updatePhase(nextPhase, nextProgress);
+      const minimumDisplay = wait(MIN_PHASE_DURATION_MS);
+      try {
+        const result = await task();
+        await minimumDisplay;
+        return result;
+      } catch (error) {
+        await minimumDisplay;
+        throw error;
       }
-    }, 650);
+    };
 
     const runScan = async () => {
       try {
-        const inputSources = await API.getSystemInputSources();
-        const generatedRules = await API.scanAndPredict(inputSources);
+        const inputSources = await runVisiblePhase(
+          "loadingInputSources",
+          18,
+          API.getSystemInputSources
+        );
+        const generatedRules = await runVisiblePhase(
+          "generatingRules",
+          58,
+          () => API.scanAndPredict(inputSources)
+        );
         if (!active) return;
-        setProgress(100);
-        setPhase("generated");
         setErrorMessage("");
         const config: AppConfig = {
           version: 1,
@@ -58,7 +124,8 @@ export default function ScanOnboardingPage() {
           },
           rules: generatedRules,
         };
-        await API.saveConfig(config);
+        await runVisiblePhase("savingConfig", 92, () => API.saveConfig(config));
+        updatePhase("generated", 100);
       } catch (error) {
         if (!active) return;
         const message =
@@ -69,8 +136,6 @@ export default function ScanOnboardingPage() {
               : "";
         setErrorMessage(message || "扫描失败，请检查 LLM 配置");
         setPhase("error");
-      } finally {
-        clearInterval(timer);
       }
     };
 
@@ -78,7 +143,6 @@ export default function ScanOnboardingPage() {
 
     return () => {
       active = false;
-      clearInterval(timer);
     };
   }, [scanAttempt]);
 
@@ -127,7 +191,7 @@ export default function ScanOnboardingPage() {
           </h1>
           <div className="flex items-center h-5 px-[2px]">
             <p className="text-sm leading-5 text-[#71717b] dark:text-[#a1a1aa] tracking-[-0.15px]">
-              正在分析已安装应用并预测最佳输入法规则...
+              {descriptionText}
             </p>
           </div>
         </div>
@@ -141,8 +205,11 @@ export default function ScanOnboardingPage() {
               className="h-full bg-[#155dfc]"
             />
           </div>
-          <div className="flex items-center justify-between text-xs text-[#9f9fa9] h-4">
-            <span className="tracking-[-0.1px]">{statusText}</span>
+          <div
+            className="flex items-center justify-between text-xs text-[#9f9fa9] h-4"
+            aria-live="polite"
+          >
+            <span className="tracking-[-0.1px]">{statusText}...</span>
             <span className="tracking-[-0.1px] tabular-nums">{progress}%</span>
           </div>
           {phase === "error" && (
@@ -174,13 +241,7 @@ export default function ScanOnboardingPage() {
             }}
             disabled={phase !== "generated" && phase !== "error"}
           >
-            <span>
-              {phase === "generated"
-                ? "开启 SmartIME 之旅"
-                : phase === "error"
-                  ? "重试扫描"
-                  : "处理中..."}
-            </span>
+            <span>{actionLabel}</span>
             <svg
               width="16"
               height="16"

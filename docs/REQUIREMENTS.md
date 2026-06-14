@@ -143,6 +143,8 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   **Input Constraint**: Prediction results must strictly be based on the user's currently installed/enabled input method list on the system, and must not fabricate non-existent input method IDs.
     *   **Rule Source**: Completely rely on LLM for intelligent inference, system does not build in any static whitelist or predefined rules.
     *   Call LLM API to predict input method preference based on application name/category.
+    *   Prediction should minimize network round trips by supporting batch prediction for multiple apps in one request when the configured provider supports OpenAI-compatible chat completions.
+    *   Batch prediction output must be validated per app: unknown bundle IDs, missing apps, malformed responses, and input source IDs not present in the current system list must not be persisted as valid rules.
 *   **FR-03 Automatic Switching**:
     *   Real-time monitoring of macOS `NSWorkspace` active application change notifications.
     *   Complete input method switching call within 100ms based on the configuration table.
@@ -152,6 +154,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 *   **FR-05 Rule Management**:
     *   Provide a visual list allowing users to search applications, and delete rules.
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
+    *   App names shown in the Rules list must follow the same localized display name macOS shows for the installed app when available, for both system apps and third-party apps.
     *   The Rules list should display each managed app with its real macOS application icon when available. If icon loading fails or the app cannot be resolved, the UI must keep a stable fallback avatar and must not block rule editing.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Unmatched App Policy**:
@@ -162,9 +165,13 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   Changes must persist across restarts and take effect at the system level.
 *   **FR-09 Manual Rescan**:
     *   Provide a "Rescan" action in the Rules view (localized label may be `重新扫描`) to refresh installed app list and re-run AI prediction, and in this process, the input method switching function is temporarily paused.
+    *   Manual rescan may reuse existing valid AI-generated rules and should only request new AI predictions for apps that are newly discovered, missing a rule, or whose saved input source is no longer valid.
+    *   Manual rules (`is_ai_generated == false`) must remain highest priority and must not be overwritten by AI prediction during rescan.
     *   Must show a loading state and prevent duplicate triggers while scanning.
     *   If user switches to another settings panel during scanning, scan must continue in background and final result must still be committed.
     *   When user returns to Rules panel before completion, loading state must still be visible until scan is done.
+    *   Progress feedback must reflect real scan phases instead of presenting a fixed fake percentage that can appear stuck.
+    *   Fast scan phases should remain visible briefly so stage transitions are perceptible, without delaying the long-running AI generation phase.
 *   **FR-10 Permission Action Separation**:
     *   Onboarding guide card triggers authorization request only.
     *   Retry/check button performs permission verification only.
@@ -172,6 +179,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 *   **FR-11 Scan Result Consistency**:
     *   In both first-run onboarding scan and later manual rescans, the in-app application list must reflect current installed applications in `/Applications` and `~/Applications`.
     *   In both first-run onboarding scan and later manual rescans, the in-app input method list must reflect current enabled system input sources.
+    *   Application rule names (`app_name`) are persisted as the latest localized display-name snapshot from scan/rescan. `bundle_id` remains the stable matching key.
     *   Input method names shown in the UI must use the same system-localized display names as macOS when available, while persisted rules continue to store stable input source IDs.
     *   App icons shown in the Rules list should be resolved from current installed app bundle paths at runtime and should not be persisted in `config.json`.
     *   Input methods removed from the system must be pruned from in-app selectable options and rule data.

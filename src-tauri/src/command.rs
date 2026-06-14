@@ -202,7 +202,8 @@ pub async fn cmd_rescan_and_save_rules(
         manager.get_config().rules
     };
 
-    let generated = predict_rules_for_apps(&target_apps, &input_sources, &state).await?;
+    let apps_to_predict = apps_requiring_prediction(&target_apps, &existing_rules, &input_sources);
+    let generated = predict_rules_for_apps(&apps_to_predict, &input_sources, &state).await?;
     let aligned = align_rules_with_apps(&target_apps, generated, &existing_rules, &input_sources);
 
     let mut manager = state
@@ -303,6 +304,9 @@ async fn predict_rules_for_apps(
             "No available input sources".to_string(),
         ));
     }
+    if target_apps.is_empty() {
+        return Ok(Vec::new());
+    }
 
     let llm_client = {
         let guard = state
@@ -319,28 +323,57 @@ async fn predict_rules_for_apps(
         guard.clone()
     };
 
-    let mut rules = Vec::new();
+    let app_targets = target_apps
+        .iter()
+        .map(|app| (app.name.clone(), app.bundle_id.clone()))
+        .collect::<Vec<_>>();
 
-    for app in target_apps {
-        match llm_client
-            .predict(&app.name, &app.bundle_id, input_sources)
-            .await
-        {
-            Ok(preferred_input) => {
-                rules.push(AppRule {
+    let predictions = match llm_client.predict_batch(&app_targets, input_sources).await {
+        Ok(predictions) => predictions,
+        Err(e) => {
+            eprintln!("Failed to batch predict app rules: {}", e);
+            HashMap::new()
+        }
+    };
+
+    Ok(target_apps
+        .iter()
+        .filter_map(|app| {
+            predictions
+                .get(&app.bundle_id)
+                .map(|preferred_input| AppRule {
                     bundle_id: app.bundle_id.clone(),
                     app_name: app.name.clone(),
-                    preferred_input,
+                    preferred_input: preferred_input.clone(),
                     is_ai_generated: true,
-                });
-            }
-            Err(e) => {
-                eprintln!("Failed to predict for {}: {}", app.name, e);
-            }
-        }
-    }
+                })
+        })
+        .collect())
+}
 
-    Ok(rules)
+fn apps_requiring_prediction(
+    target_apps: &[SystemApp],
+    existing_rules: &[AppRule],
+    input_sources: &[InputSource],
+) -> Vec<SystemApp> {
+    let valid_input_ids: HashSet<&str> = input_sources
+        .iter()
+        .map(|source| source.id.as_str())
+        .collect();
+    let existing_by_bundle: HashMap<&str, &AppRule> = existing_rules
+        .iter()
+        .map(|rule| (rule.bundle_id.as_str(), rule))
+        .collect();
+
+    target_apps
+        .iter()
+        .filter(|app| match existing_by_bundle.get(app.bundle_id.as_str()) {
+            Some(rule) if !rule.is_ai_generated => false,
+            Some(rule) if valid_input_ids.contains(rule.preferred_input.as_str()) => false,
+            _ => true,
+        })
+        .cloned()
+        .collect()
 }
 
 fn align_rules_with_apps(
@@ -568,6 +601,92 @@ mod tests {
 
         assert_eq!(normalized[0].preferred_input, "com.apple.keylayout.ABC");
         assert_eq!(normalized[1].preferred_input, "com.apple.keylayout.ABC");
+    }
+
+    fn test_input_sources() -> Vec<InputSource> {
+        vec![
+            InputSource {
+                id: "com.apple.keylayout.ABC".to_string(),
+                name: "ABC".to_string(),
+                category: "TISCategoryKeyboardInputSource".to_string(),
+            },
+            InputSource {
+                id: "com.apple.inputmethod.SCIM.ITABC".to_string(),
+                name: "Pinyin - Simplified".to_string(),
+                category: "TISCategoryKeyboardInputSource".to_string(),
+            },
+        ]
+    }
+
+    fn test_system_app(name: &str, bundle_id: &str) -> SystemApp {
+        SystemApp {
+            name: name.to_string(),
+            bundle_id: bundle_id.to_string(),
+            path: PathBuf::from(format!("/Applications/{name}.app")),
+        }
+    }
+
+    fn test_rule(
+        app_name: &str,
+        bundle_id: &str,
+        preferred_input: &str,
+        is_ai_generated: bool,
+    ) -> AppRule {
+        AppRule {
+            app_name: app_name.to_string(),
+            bundle_id: bundle_id.to_string(),
+            preferred_input: preferred_input.to_string(),
+            is_ai_generated,
+        }
+    }
+
+    #[test]
+    fn test_apps_requiring_prediction_reuses_valid_rules_and_preserves_manual_rules() {
+        let target_apps = vec![
+            test_system_app("Manual", "com.example.manual"),
+            test_system_app("Existing AI", "com.example.existing-ai"),
+            test_system_app("Invalid AI", "com.example.invalid-ai"),
+            test_system_app("New App", "com.example.new"),
+        ];
+        let existing_rules = vec![
+            test_rule(
+                "Manual",
+                "com.example.manual",
+                "com.example.removed-input",
+                false,
+            ),
+            test_rule(
+                "Existing AI",
+                "com.example.existing-ai",
+                "com.apple.keylayout.ABC",
+                true,
+            ),
+            test_rule(
+                "Invalid AI",
+                "com.example.invalid-ai",
+                "com.example.removed-input",
+                true,
+            ),
+            test_rule(
+                "Stale",
+                "com.example.stale",
+                "com.apple.keylayout.ABC",
+                true,
+            ),
+        ];
+
+        let gaps = apps_requiring_prediction(&target_apps, &existing_rules, &test_input_sources());
+
+        assert_eq!(gaps.len(), 2);
+        assert!(gaps
+            .iter()
+            .any(|app| app.bundle_id == "com.example.invalid-ai"));
+        assert!(gaps.iter().any(|app| app.bundle_id == "com.example.new"));
+        assert!(!gaps.iter().any(|app| app.bundle_id == "com.example.manual"));
+        assert!(!gaps
+            .iter()
+            .any(|app| app.bundle_id == "com.example.existing-ai"));
+        assert!(!gaps.iter().any(|app| app.bundle_id == "com.example.stale"));
     }
 
     #[test]

@@ -127,6 +127,51 @@ Manual validation:
 2.  Switch into a managed app and confirm automatic input-source switching still works.
 3.  Confirm SmartIME does not open an overlay window or show a custom input method prompt.
 
+### 4.8 Scan Performance Optimization Plan
+
+This plan was confirmed for implementation on 2026-06-13 and implemented in the corresponding execution record under `docs/exec-plan/`.
+
+Goal: reduce first-run scan and manual rescan latency by replacing serial per-app LLM requests with batch prediction, reusing valid existing rules during rescan, and making scan progress feedback match real backend phases.
+
+Architecture:
+
+1.  Keep `AppRule` persistence unchanged.
+2.  Add batch prediction inside `src-tauri/src/llm.rs` and call it from `src-tauri/src/command.rs`.
+3.  During first-run scan, batch-predict all target apps.
+4.  During manual rescan, preserve manual rules and valid existing AI rules, predict only apps still missing a valid rule, then align and persist.
+5.  Keep a safe fallback path for malformed batch responses or provider failures.
+
+| Task ID | Task Title | Dependencies | Files | Description | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **BE-SCAN-PERF-01** | **Add Batch Prediction Response Types and Parsing Tests** | BE-03 | Modify `src-tauri/src/llm.rs` | Add internal structures/helpers for strict batch response parsing: bundle ID -> input source ID. Cover valid JSON, malformed JSON, unknown bundle IDs, missing apps, and invalid input source IDs. | Targeted Rust tests fail before implementation and pass after; invalid entries are rejected without panics. |
+| **BE-SCAN-PERF-02** | **Implement `LLMClient::predict_batch`** | BE-SCAN-PERF-01 | Modify `src-tauri/src/llm.rs` | Add a batch prompt that sends target apps and current input sources in one OpenAI-compatible chat completion request. Parse and validate the JSON response into generated `AppRule` data or a validated map. | Unit tests cover prompt-independent parsing; integration path returns only rules whose input source IDs exist in current system options. |
+| **BE-SCAN-PERF-03** | **Refactor Rule Gap Detection** | BE-SCAN-PERF-01 | Modify `src-tauri/src/command.rs` | Extract helper logic that identifies which target apps need AI prediction. Manual rules always win; valid existing AI rules can be reused; invalid input source IDs are normalized or marked as gaps. | Unit tests cover manual preservation, AI-rule reuse, new app prediction gaps, stale app pruning, and removed input-source handling. |
+| **BE-SCAN-PERF-04** | **Use Batch Prediction in First Scan** | BE-SCAN-PERF-02 | Modify `src-tauri/src/command.rs` | Update `cmd_scan_and_predict` / prediction orchestration to use batch prediction for the initial target app set, then align rules with the current input source list. | First scan no longer performs one network request per app; fallback rules still produce a complete rule list when some batch predictions are invalid. |
+| **BE-SCAN-PERF-05** | **Use Incremental Prediction in Manual Rescan** | BE-SCAN-PERF-03, BE-SCAN-PERF-04 | Modify `src-tauri/src/command.rs` | Update `cmd_rescan_and_save_rules` to reuse valid existing rules and batch-predict only missing/new/invalid app gaps before saving. | Rescan with unchanged installed apps performs no LLM prediction for already valid rules; newly installed apps are predicted and merged; manual overrides survive. |
+| **BE-SCAN-PERF-06** | **Add Provider Failure and Fallback Behavior** | BE-SCAN-PERF-04 | Modify `src-tauri/src/llm.rs`, `src-tauri/src/command.rs` | Define fallback behavior for malformed batch JSON, provider errors, partial responses, and invalid returned IDs. Prefer partial valid results plus deterministic fallback over blocking on serial per-app requests. | Tests verify provider/malformed failures do not crash, do not persist invalid IDs, and still return aligned rules. |
+| **FE-SCAN-PERF-01** | **Replace Fake 88% Scan Progress with Real Phases** | BE-SCAN-PERF-04 | Modify `app/onboarding/scan/page.tsx` | Replace the fixed random progress-to-88 behavior with phase-based text and bounded progress reflecting app discovery, input source loading, AI generation, saving, and completion. | UI no longer appears stuck at 88%; long LLM work is described as AI generation; errors still show retry. |
+| **FE-SCAN-PERF-02** | **Improve Rescan Status Feedback** | BE-SCAN-PERF-05 | Modify `app/settings/rules/page.tsx` | Keep duplicate-trigger prevention, but make the rescan loading copy reflect that existing rules may be reused and only missing rules are being generated. | Rescan button remains disabled during backend work; returning to Rules during in-flight rescan still shows loading state. |
+| **QA-SCAN-PERF-01** | **Performance and Regression Validation** | BE-SCAN-PERF-06, FE-SCAN-PERF-02 | Manual validation, `docs/exec-plan/` record after implementation | Compare first scan and manual rescan timing before/after using a config with many apps. Validate rule correctness, manual override preservation, and no fake stuck progress. | `cargo fmt`, `cargo test`, `bun run build`, and `bun tauri build --bundles app` pass; manual rescan with unchanged apps is near local-scan speed plus icon/UI sync; first scan avoids N serial LLM calls. |
+
+Validation commands:
+
+```bash
+cd src-tauri && cargo fmt
+cd src-tauri && cargo test
+bun run build
+bun tauri build --bundles app
+```
+
+Manual validation:
+
+1.  Start from a config with many existing rules and a valid LLM config.
+2.  Trigger manual rescan from Rules.
+3.  Confirm existing manual rules and valid AI rules are reused.
+4.  Add or simulate one new app and confirm only the new gap needs prediction.
+5.  Reset config and run first onboarding scan.
+6.  Confirm scan progress uses real phase language rather than appearing stuck at 88%.
+7.  Confirm persisted rules contain only valid system input source IDs.
+
 ## 5. Packaging & Distribution
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |

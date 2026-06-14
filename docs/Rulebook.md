@@ -260,14 +260,19 @@ Keep identity aligned across:
 2.  Open SmartIME Rules and inspect the input method dropdown.
 3.  Confirm the label follows the system-localized name, for example `简体拼音`, while rule values still store the original input source ID.
 
-### 3.13 Treating App Icons As Persisted Rule Data Or Ignoring Cocoa Ownership
+### 3.13 Treating App Names And Icons As Raw Bundle Metadata
 
-**Mistake**: Rendering placeholder initials for managed apps, storing large app icon payloads directly in persisted rule config, or forgetting Cocoa retain/release ownership when converting native icons to frontend-safe image data.
+**Mistake**: Rendering placeholder initials for managed apps, showing raw bundle fallback names such as `WeChat` or `aDrive` when macOS has localized names, storing large app icon payloads directly in persisted rule config, or forgetting Cocoa retain/release ownership when converting native icons to frontend-safe image data.
 
-**Why it is easy to miss**: Rule rows already have enough identity to function (`bundle_id` and `app_name`), so a placeholder can survive for a long time. The tempting quick fix is to attach icon data to `AppRule`, but that makes `config.json` larger and stale when apps move or update their icons. On the native side, Rust ownership does not automatically manage Objective-C objects created with `alloc/init`; an autorelease pool only drains objects that were actually autoreleased.
+**Why it is easy to miss**: Rule rows already have enough identity to function (`bundle_id` and `app_name`), so raw `CFBundleName` values and placeholder icons can survive for a long time. Third-party apps may keep English `CFBundleName` values while shipping localized `InfoPlist.strings`, and system APIs can sometimes return only the plain `.app` filename. The tempting quick icon fix is to attach icon data to `AppRule`, but that makes `config.json` larger and stale when apps move or update their icons. On the native side, Rust ownership does not automatically manage Objective-C objects created with `alloc/init`; an autorelease pool only drains objects that were actually autoreleased.
 
 **Correct behavior**:
 
+- Resolve app display names from the installed app bundle at scan/rescan time.
+- Prefer the macOS localized display name when available, but if it is only the plain `.app` filename, continue checking localized `InfoPlist.strings` before falling back to raw plist names.
+- Treat plain `.app` filename comparisons as case-insensitive, because apps can return `Doubao` for `doubao.app` or `NetEaseMusic` for `NeteaseMusic.app`.
+- Parse localized `InfoPlist.strings` as both UTF-8 and UTF-16 with BOM; Chinese third-party apps commonly ship UTF-16 strings files.
+- Keep `AppRule.app_name` as a persisted display-name snapshot and `bundle_id` as the stable matching key; do not add a separate display-name field without a schema reason.
 - Resolve app icons from the currently installed app bundle path at runtime.
 - Keep app icon data as a frontend display cache only.
 - Do not persist PNG/base64 icon data in `config.json`.
@@ -279,10 +284,35 @@ Keep identity aligned across:
 **Test method**:
 
 1.  Build and launch the bundled `.app`.
-2.  Open SmartIME Rules and confirm common third-party apps and supported system apps show their real macOS icons.
-3.  Confirm a missing or unresolved app icon falls back to the initial-letter avatar without blocking input-method selection, deletion, or rescan.
-4.  Inspect `config.json` and confirm rules still contain only stable rule fields, not icon data URLs.
-5.  Repeatedly revisit Rules or trigger rescans and confirm native memory does not grow monotonically from leaked retained Cocoa objects.
+2.  Open SmartIME Rules and confirm common third-party apps and supported system apps show localized names and real macOS icons.
+3.  On a Chinese macOS system, confirm examples such as Doubao, NetEaseMusic, WeChat, and aDrive show as `豆包`, `网易云音乐`, `微信`, and `阿里云盘` when those localized resources exist.
+4.  Confirm a missing or unresolved app icon falls back to the initial-letter avatar without blocking input-method selection, deletion, or rescan.
+5.  Inspect `config.json` and confirm rules still contain only stable rule fields, not icon data URLs.
+6.  Repeatedly revisit Rules or trigger rescans and confirm native memory does not grow monotonically from leaked retained Cocoa objects.
+
+### 3.14 Sending Batchable Data To External Services One Item At A Time
+
+**Mistake**: Sending each app to the LLM one by one to generate rules, reusing rescan gap-detection logic in the first onboarding scan, or parsing batch LLM JSON in a way that treats structured rule objects as generic string maps.
+
+**Why it is easy to miss**: Per-item code is straightforward to write and easy to test with a small local sample, but it creates terrible user experience when the real data set is dozens of apps and each item triggers network latency, provider queueing, or rate limits. First scan and manual rescan also both produce `AppRule` lists, but only rescan has existing rules that can be reused. Batch LLM responses can arrive as either a direct `{ bundle_id: input_source_id }` map or structured objects like `{ bundle_id, preferred_input }`; checking the generic map shape first can silently drop valid structured entries.
+
+**Correct behavior**:
+
+- When a feature processes many similar records, first evaluate batching, caching, deduplication, and incremental gap processing before writing a per-item external request loop.
+- Treat LLM/API calls as expensive UX boundaries; avoid N serial network calls when one batch call or a small number of bounded batches can produce the same result.
+- First onboarding scan has no rule cache: batch-predict the full target app set, then align with an empty existing-rule list.
+- Manual rescan must read existing persisted rules first, preserve manual rules, reuse valid existing AI rules, predict only missing/new/invalid AI gaps, then align and persist.
+- Batch response parsing must validate both target bundle IDs and currently available input source IDs.
+- Parse structured rule items before generic string maps, so `{ bundle_id, preferred_input }` entries are not misclassified.
+- Provider errors, malformed JSON, or partial responses should not panic or fall back to serial N-request prediction; use valid partial results and deterministic alignment fallback.
+
+**Test method**:
+
+1.  Run `cd src-tauri && cargo test`.
+2.  Confirm parser tests cover direct maps, structured arrays, malformed JSON, unknown bundle IDs, and invalid input source IDs.
+3.  Confirm rescan gap tests cover manual preservation, valid AI-rule reuse, invalid AI-rule gaps, new app gaps, and stale app pruning.
+4.  Run onboarding scan and manual rescan on the bundled app; unchanged rescans should avoid LLM calls for already valid rules.
+5.  During review, search for loops that call LLM/API/network functions per record and require a clear reason if they are intentionally serial.
 
 ## 4. Incident Catalog
 
@@ -298,7 +328,8 @@ Keep identity aligned across:
 | INC-008 | Calling current-input-source APIs off the main thread | Current-input-source reads in app-switch handling crashed bundled app with `EXC_BREAKPOINT` / `dispatch_assert_queue` inside `TISCopyCurrentKeyboardInputSource`. | HIToolbox current-input-source reads must be marshaled to the main thread just like input-source selection. | Rapid app switching on bundled app should not crash while automatic switching continues to work. |
 | INC-009 | Blocking a sync command after scheduling main-thread TIS work | Frontend-facing input-source commands could enqueue TIS work back to the main thread and then wait synchronously, risking a timeout because the queued task could not run until the command returned. | Make frontend TIS commands async and move the channel wait into `tauri::async_runtime::spawn_blocking`, while keeping the actual TIS call in `run_on_main_thread`. | Load input sources, manually select an input source, and run onboarding/manual rescans without 500ms or 5s main-thread timeout errors. |
 | INC-010 | Trusting TIS localized names as final UI labels | Built-in input methods could show English fallback labels such as `Pinyin - Simplified` instead of the system-localized label users see in macOS. | Prefer AppKit input-source localized names, use a locale-gated built-in Apple fallback for known English labels, and fall back to TIS only when needed. | On a Chinese macOS system, Rules dropdown should show `简体拼音` or the current system-localized equivalent for Simplified Pinyin. |
-| INC-011 | Treating app icons as persisted rule data or ignoring Cocoa ownership | Rule rows showed initial-letter placeholders instead of the same app icons users see in macOS, and review found the native rendering path initially leaked retained Objective-C objects. | Resolve real app icons from installed bundle paths at runtime, keep icon payloads out of persisted rules, fall back visually when lookup fails, and explicitly release/autorelease Cocoa objects created with ownership transfer. | In the bundled app, Rules rows should show real icons, `config.json` remains free of icon data, and repeated Rules visits/rescans should not leak native image memory. |
+| INC-011 | Treating app names and icons as raw bundle metadata | Rule rows showed initial-letter placeholders and raw English bundle fallback names instead of the localized names and icons users see in macOS; review also found the native icon rendering path initially leaked retained Objective-C objects. | Resolve localized app names and real app icons from installed bundle paths at scan/rescan time, keep icon payloads out of persisted rules, fall back visually when lookup fails, and explicitly release/autorelease Cocoa objects created with ownership transfer. | In the bundled app, Rules rows should show localized names and real icons, `config.json` remains free of icon data, and repeated Rules visits/rescans should not leak native image memory. |
+| INC-012 | Sending batchable data to external services one item at a time | Initial rule generation sent each app to the LLM separately, making first scan and rescan painfully slow; the later optimization also briefly applied rescan-only gap detection to the first scan path, and batch parsing initially misclassified structured rule objects as a generic string map. | For similar records, consider batching/caching/incremental gaps before writing per-item API loops. Keep first scan as full batch prediction with empty existing rules; keep rescan as incremental gap prediction; parse structured batch entries before generic maps. | `cargo test` must cover first/rescan helper behavior and batch parser response shapes, and review should flag serial per-record LLM/API loops unless there is a clear product reason. |
 
 ## 5. Testing Methods AI Should Prefer
 
@@ -342,10 +373,11 @@ Run this matrix on a bundled app before release:
 1.  Permission onboarding: request-only and check-only actions are independent.
 2.  First scan output: app list and input method options match current system state.
 3.  Input method labels: options use system-localized display names while persisted values remain stable source IDs.
-4.  Rule app icons: installed app rows show real macOS icons, unresolved icons fall back cleanly, `config.json` does not persist icon payloads, and repeated icon loads do not leak retained Cocoa objects.
+4.  Rule app names and icons: installed app rows show localized macOS app names and real icons, unresolved icons fall back cleanly, `config.json` does not persist icon payloads, and repeated icon loads do not leak retained Cocoa objects.
 5.  Rules rescan: no crash, duplicate triggers blocked, loading lifecycle correct across panel switches.
 6.  System app scope: curated input-capable Apple apps appear with recognizable names; internal/system utility bundles stay hidden.
-7.  Input-source stability: repeated automatic input-source switches do not crash the app, current-input-source reads do not leave the main thread, and frontend input-source commands do not time out while waiting for main-thread TIS work.
-8.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
-9.  Login item behavior: startup works without duplicate process/icon side effects.
-10.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.
+7.  Scan performance: first scan avoids serial per-app LLM calls; unchanged manual rescan reuses valid existing rules and predicts only gaps.
+8.  Input-source stability: repeated automatic input-source switches do not crash the app, current-input-source reads do not leave the main thread, and frontend input-source commands do not time out while waiting for main-thread TIS work.
+9.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
+10.  Login item behavior: startup works without duplicate process/icon side effects.
+11.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.
