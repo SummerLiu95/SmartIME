@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-14
+
+### Added
+- **Real App Icons**: Display macOS app icons in the Rules list, with the existing initial-letter avatar kept as the fallback for unresolved apps.
+- **Localized App Names**: Resolve app display names from macOS and localized bundle resources so Rules can show names such as `微信`, `网易云音乐`, `豆包`, and `阿里云盘` on Chinese systems.
+
+### Changed
+- **Scan Performance**: Batch LLM rule prediction during first scan instead of sending one request per app.
+- **Manual Rescan**: Preserve manual rules, reuse valid existing AI rules, and generate predictions only for missing or invalid rule gaps.
+- **Scan Progress UI**: Replace simulated onboarding progress with phase-based scan progress and clearer rescan status copy.
+
 ## [1.1.0] - 2026-06-11
 
 ### Added
