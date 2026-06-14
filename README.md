@@ -131,7 +131,9 @@ bun run lint
 2. Create and push a tag in format `v<version>` (for example `v0.1.0`).
 3. GitHub Actions workflow `Release DMG` is triggered automatically and will:
    - run `bun tauri build`
+   - include the matching `CHANGELOG.md` version section in the GitHub Release notes
    - upload `SmartIME_<version>_aarch64.dmg` and checksum file to GitHub Release.
+4. To backfill release notes for an already published version, run the `Sync Release Notes` workflow manually with the version number without the `v` prefix.
 
 
 ## Milestone

@@ -111,8 +111,21 @@ jobs:
 
           VERSION="${{ steps.versions.outputs.version }}"
           SHA256="${{ steps.assets.outputs.sha256 }}"
+          CHANGELOG_SECTION="$(awk -v version="${VERSION}" '
+            $0 ~ "^## \\[" version "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md | sed '1{/^[[:space:]]*$/d;}')"
+
+          if [[ -z "${CHANGELOG_SECTION}" ]]; then
+            echo "No CHANGELOG.md section found for ${VERSION}."
+            exit 1
+          fi
+
           cat <<EOF > RELEASE_NOTES.md
           ## SmartIME ${VERSION}
+
+          ${CHANGELOG_SECTION}
 
           ### Assets
           - SmartIME_${VERSION}_aarch64.dmg
