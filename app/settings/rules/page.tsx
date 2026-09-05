@@ -5,6 +5,7 @@ import Image from "next/image";
 import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { API, AppConfig, AppIconMap, InputSource } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Search, Trash2 } from "lucide-react";
@@ -21,6 +22,38 @@ const EMPTY_CONFIG: AppConfig = {
   rules: [],
 };
 
+const FIRST_SCREEN_ICON_BATCH_SIZE = 8;
+const BACKGROUND_ICON_BATCH_SIZE = 24;
+
+type AppIconStatus = "pending" | "resolved" | "missing";
+type AppIconStatusMap = Record<string, AppIconStatus>;
+
+const pruneRecord = <T extends string>(
+  record: Record<string, T>,
+  keep: Set<string>
+): Record<string, T> => {
+  let changed = false;
+  const next: Record<string, T> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (!keep.has(key)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+
+  return changed ? next : record;
+};
+
+const chunkBundleIds = (bundleIds: string[], size: number): string[][] => {
+  const chunks: string[][] = [];
+  for (let index = 0; index < bundleIds.length; index += size) {
+    chunks.push(bundleIds.slice(index, index + size));
+  }
+  return chunks;
+};
+
 export default function RulesPage() {
   const [config, setConfig] = useState<AppConfig>(EMPTY_CONFIG);
   const [inputSources, setInputSources] = useState<InputSource[]>([]);
@@ -29,7 +62,13 @@ export default function RulesPage() {
   const [isRescanning, setIsRescanning] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
   const [appIcons, setAppIcons] = useState<AppIconMap>({});
+  const [appIconStatus, setAppIconStatus] = useState<AppIconStatusMap>({});
+  const [iconReloadToken, setIconReloadToken] = useState(0);
   const isMountedRef = useRef(false);
+  const iconRequestIdRef = useRef(0);
+  const lastIconReloadTokenRef = useRef(0);
+  const appIconsRef = useRef<AppIconMap>({});
+  const appIconStatusRef = useRef<AppIconStatusMap>({});
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -37,6 +76,14 @@ export default function RulesPage() {
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    appIconsRef.current = appIcons;
+  }, [appIcons]);
+
+  useEffect(() => {
+    appIconStatusRef.current = appIconStatus;
+  }, [appIconStatus]);
 
   useEffect(() => {
     const load = async () => {
@@ -100,6 +147,7 @@ export default function RulesPage() {
         if (!isMountedRef.current) return;
         setConfig(currentConfig);
         setInputSources(sources);
+        setIconReloadToken((token) => token + 1);
       } catch (error) {
         console.error("Failed to sync rescan state", error);
       }
@@ -124,35 +172,124 @@ export default function RulesPage() {
     );
   }, [rules, search]);
 
+  const visibleRuleBundleIds = useMemo(() => {
+    const seen = new Set<string>();
+    return filteredRules
+      .map((rule) => rule.bundle_id.trim())
+      .filter((bundleId) => {
+        if (!bundleId || seen.has(bundleId)) return false;
+        seen.add(bundleId);
+        return true;
+      });
+  }, [filteredRules]);
+
+  const visibleRuleBundleKey = useMemo(
+    () => visibleRuleBundleIds.join("\n"),
+    [visibleRuleBundleIds]
+  );
+
   useEffect(() => {
     if (!ruleBundleKey) {
       setAppIcons({});
+      setAppIconStatus({});
       return;
     }
 
-    let isCurrent = true;
-    const bundleIds = ruleBundleKey.split("\n").filter(Boolean);
+    const activeBundleIds = new Set(rules.map((rule) => rule.bundle_id));
+    setAppIcons((prev) => pruneRecord(prev, activeBundleIds));
+    setAppIconStatus((prev) => pruneRecord(prev, activeBundleIds));
+  }, [ruleBundleKey, rules]);
 
-    const loadIcons = async () => {
+  useEffect(() => {
+    if (!visibleRuleBundleKey) return;
+
+    const requestId = iconRequestIdRef.current + 1;
+    iconRequestIdRef.current = requestId;
+    const forceReload = lastIconReloadTokenRef.current !== iconReloadToken;
+    lastIconReloadTokenRef.current = iconReloadToken;
+
+    const bundleIdsToLoad = visibleRuleBundleIds.filter((bundleId) => {
+      if (forceReload) return true;
+      return (
+        !appIconsRef.current[bundleId] &&
+        appIconStatusRef.current[bundleId] !== "missing"
+      );
+    });
+
+    if (bundleIdsToLoad.length === 0) {
+      return;
+    }
+
+    const firstBatch = bundleIdsToLoad.slice(0, FIRST_SCREEN_ICON_BATCH_SIZE);
+    const backgroundBatches = chunkBundleIds(
+      bundleIdsToLoad.slice(FIRST_SCREEN_ICON_BATCH_SIZE),
+      BACKGROUND_ICON_BATCH_SIZE
+    );
+
+    const markPending = (bundleIds: string[]) => {
+      setAppIconStatus((prev) => {
+        const next = { ...prev };
+        for (const bundleId of bundleIds) {
+          if (!appIconsRef.current[bundleId]) {
+            next[bundleId] = "pending";
+          }
+        }
+        return next;
+      });
+    };
+
+    const applyBatch = async (bundleIds: string[]) => {
+      if (bundleIds.length === 0) return;
+      markPending(bundleIds);
+
       try {
         const icons = await API.getAppIcons(bundleIds);
-        if (isCurrent && isMountedRef.current) {
-          setAppIcons(icons);
-        }
+        if (!isMountedRef.current || iconRequestIdRef.current !== requestId) return;
+
+        setAppIcons((prev) => {
+          const next = { ...prev, ...icons };
+          for (const bundleId of bundleIds) {
+            if (!icons[bundleId]) {
+              delete next[bundleId];
+            }
+          }
+          return next;
+        });
+        setAppIconStatus((prev) => {
+          const next = { ...prev };
+          for (const bundleId of bundleIds) {
+            next[bundleId] = icons[bundleId] ? "resolved" : "missing";
+          }
+          return next;
+        });
       } catch (error) {
         console.error("Failed to load app icons", error);
-        if (isCurrent && isMountedRef.current) {
-          setAppIcons({});
-        }
+        if (!isMountedRef.current || iconRequestIdRef.current !== requestId) return;
+        setAppIconStatus((prev) => {
+          const next = { ...prev };
+          for (const bundleId of bundleIds) {
+            if (!appIconsRef.current[bundleId]) {
+              next[bundleId] = "missing";
+            }
+          }
+          return next;
+        });
       }
     };
 
-    loadIcons();
+    const loadBatches = async () => {
+      await applyBatch(firstBatch);
 
-    return () => {
-      isCurrent = false;
+      for (const batch of backgroundBatches) {
+        if (!isMountedRef.current || iconRequestIdRef.current !== requestId) return;
+        await applyBatch(batch);
+        if (!isMountedRef.current || iconRequestIdRef.current !== requestId) return;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
     };
-  }, [ruleBundleKey]);
+
+    loadBatches();
+  }, [visibleRuleBundleIds, visibleRuleBundleKey, iconReloadToken]);
 
   const handleSaveRules = async (nextRules: AppConfig["rules"]) => {
     if (isMountedRef.current) {
@@ -193,6 +330,7 @@ export default function RulesPage() {
         const sources = await API.getSystemInputSources();
         if (isMountedRef.current) {
           setInputSources(sources);
+          setIconReloadToken((token) => token + 1);
         }
       }
     } catch (error) {
@@ -223,8 +361,6 @@ export default function RulesPage() {
     }
   };
 
-
-
   return (
     <AppLayout>
       <div className="flex flex-col h-full bg-white dark:bg-zinc-900">
@@ -246,7 +382,7 @@ export default function RulesPage() {
               )}
             />
           </div>
-          
+
           <Button
             onClick={rescanRules}
             disabled={isRescanning || isLoading}
@@ -295,15 +431,20 @@ export default function RulesPage() {
           ) : (
             filteredRules.map((rule) => {
               const iconSrc = appIcons[rule.bundle_id];
+              const iconStatus = appIconStatus[rule.bundle_id];
+              const showPendingIcon = !iconSrc && iconStatus !== "missing";
+              const showFallbackIcon = !iconSrc && iconStatus === "missing";
               return (
-                <div 
+                <div
                   key={rule.bundle_id}
                   className="flex items-center border-b border-[#f4f4f5] dark:border-zinc-800/50 h-[73px]"
                 >
                   {/* App Icon */}
                   <div className="w-[130px] pl-2">
                     <div className="w-10 h-10 rounded-[14px] bg-white dark:bg-zinc-800 border border-[#e4e4e7] dark:border-zinc-700 flex items-center justify-center overflow-hidden text-xl shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]">
-                      {iconSrc ? (
+                      {showPendingIcon ? (
+                        <Skeleton className="h-6 w-6 rounded-[8px] bg-[#e4e4e7] dark:bg-zinc-700" />
+                      ) : iconSrc ? (
                         <Image
                           src={iconSrc}
                           alt=""
@@ -313,9 +454,9 @@ export default function RulesPage() {
                           className="h-full w-full object-cover"
                           draggable={false}
                         />
-                      ) : (
+                      ) : showFallbackIcon ? (
                         rule.app_name.charAt(0).toUpperCase()
-                      )}
+                      ) : null}
                     </div>
                   </div>
 

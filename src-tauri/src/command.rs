@@ -10,6 +10,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, State};
 
+const FIRST_SCREEN_ICON_BATCH_SIZE: usize = 8;
+
 // Input Source Commands
 
 #[tauri::command]
@@ -37,45 +39,17 @@ pub async fn cmd_select_input_source(id: String, app: AppHandle) -> Result<()> {
 // Config Commands
 
 #[tauri::command]
-pub fn cmd_get_installed_apps() -> Result<Vec<SystemApp>> {
-    crate::system_apps::get_installed_apps()
+pub fn cmd_get_installed_apps(state: State<'_, AppState>) -> Result<Vec<SystemApp>> {
+    get_installed_apps_for_runtime(&state, false)
 }
 
 #[tauri::command]
 pub async fn cmd_get_app_icons(
     bundle_ids: Vec<String>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<HashMap<String, String>> {
-    let requested_bundle_ids: HashSet<String> = bundle_ids
-        .into_iter()
-        .filter_map(|id| {
-            let id = id.trim().to_string();
-            (!id.is_empty()).then_some(id)
-        })
-        .collect();
-
-    if requested_bundle_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let icon_targets = tauri::async_runtime::spawn_blocking(move || {
-        let icon_targets = crate::system_apps::get_installed_apps()?
-            .into_iter()
-            .filter(|app| requested_bundle_ids.contains(&app.bundle_id))
-            .map(|app| (app.bundle_id, app.path))
-            .collect();
-        Ok::<Vec<(String, std::path::PathBuf)>, AppError>(icon_targets)
-    })
-    .await
-    .map_err(|e| AppError::Config(format!("Failed to join app icon path scan: {e}")))??;
-
-    run_input_source_task_on_main_thread_async(
-        app,
-        "app icon lookup",
-        Duration::from_secs(5),
-        move || crate::app_icon::app_icon_data_urls(&icon_targets),
-    )
-    .await
+    load_app_icons(bundle_ids, &state, &app).await
 }
 
 #[tauri::command]
@@ -162,15 +136,15 @@ pub fn cmd_get_llm_config(state: State<'_, AppState>) -> Result<LLMConfig> {
 pub async fn cmd_scan_and_predict(
     input_sources: Vec<InputSource>,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Vec<AppRule>> {
-    let target_apps = get_target_apps()?;
+    let target_apps = get_target_apps(&state, true)?;
     let generated = predict_rules_for_apps(&target_apps, &input_sources, &state).await?;
-    Ok(align_rules_with_apps(
-        &target_apps,
-        generated,
-        &[],
-        &input_sources,
-    ))
+    let aligned = align_rules_with_apps(&target_apps, generated, &[], &input_sources);
+    if let Err(err) = warm_rule_icon_cache(&aligned, &state, &app).await {
+        eprintln!("Failed to warm app icon cache after initial scan: {err}");
+    }
+    Ok(aligned)
 }
 
 #[tauri::command]
@@ -192,7 +166,7 @@ pub async fn cmd_rescan_and_save_rules(
     };
 
     let input_sources = get_system_input_sources_on_main_thread(&app)?;
-    let target_apps = get_target_apps()?;
+    let target_apps = get_target_apps(&state, true)?;
 
     let existing_rules = {
         let manager = state
@@ -206,13 +180,19 @@ pub async fn cmd_rescan_and_save_rules(
     let generated = predict_rules_for_apps(&apps_to_predict, &input_sources, &state).await?;
     let aligned = align_rules_with_apps(&target_apps, generated, &existing_rules, &input_sources);
 
-    let mut manager = state
-        .config
-        .lock()
-        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-    let mut config = manager.get_config();
-    config.rules = aligned.clone();
-    manager.set_config(config)?;
+    {
+        let mut manager = state
+            .config
+            .lock()
+            .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+        let mut config = manager.get_config();
+        config.rules = aligned.clone();
+        manager.set_config(config)?;
+    }
+
+    if let Err(err) = warm_rule_icon_cache(&aligned, &state, &app).await {
+        eprintln!("Failed to warm app icon cache after rescan: {err}");
+    }
 
     Ok(aligned)
 }
@@ -289,15 +269,15 @@ where
     result.map_err(AppError::InputSource)
 }
 
-fn get_target_apps() -> Result<Vec<SystemApp>> {
-    let installed_apps = crate::system_apps::get_installed_apps()?;
+fn get_target_apps(app_state: &AppState, invalidate_icon_cache: bool) -> Result<Vec<SystemApp>> {
+    let installed_apps = get_installed_apps_for_runtime(app_state, invalidate_icon_cache)?;
     Ok(filter_target_apps(installed_apps))
 }
 
 async fn predict_rules_for_apps(
     target_apps: &[SystemApp],
     input_sources: &[InputSource],
-    state: &State<'_, AppState>,
+    app_state: &AppState,
 ) -> Result<Vec<AppRule>> {
     if input_sources.is_empty() {
         return Err(AppError::InputSource(
@@ -309,7 +289,7 @@ async fn predict_rules_for_apps(
     }
 
     let llm_client = {
-        let guard = state
+        let guard = app_state
             .llm
             .lock()
             .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
@@ -451,6 +431,159 @@ fn filter_target_apps(apps: Vec<SystemApp>) -> Vec<SystemApp> {
     apps.into_iter()
         .filter(|app| !app.bundle_id.trim().is_empty() && !app.name.trim().is_empty())
         .collect()
+}
+
+fn get_installed_apps_for_runtime(
+    app_state: &AppState,
+    invalidate_icon_cache: bool,
+) -> Result<Vec<SystemApp>> {
+    let installed_apps = crate::system_apps::get_installed_apps()?;
+    refresh_runtime_app_cache(app_state, &installed_apps, invalidate_icon_cache)?;
+    Ok(installed_apps)
+}
+
+fn refresh_runtime_app_cache(
+    app_state: &AppState,
+    installed_apps: &[SystemApp],
+    invalidate_icon_cache: bool,
+) -> Result<()> {
+    let mut runtime_apps = app_state
+        .runtime_apps
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    runtime_apps.refresh_installed_apps(installed_apps);
+    if invalidate_icon_cache {
+        runtime_apps.clear_icons();
+    }
+    Ok(())
+}
+
+fn runtime_metadata_complete(app_state: &AppState, bundle_ids: &[String]) -> Result<bool> {
+    let runtime_apps = app_state
+        .runtime_apps
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    Ok(runtime_apps.has_metadata_for_all(bundle_ids))
+}
+
+fn cached_icon_state(
+    app_state: &AppState,
+    bundle_ids: &[String],
+) -> Result<(HashMap<String, String>, Vec<(String, std::path::PathBuf)>)> {
+    let runtime_apps = app_state
+        .runtime_apps
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    Ok((
+        runtime_apps.cached_icons(bundle_ids),
+        runtime_apps.pending_icon_targets(bundle_ids),
+    ))
+}
+
+fn store_icon_results(
+    app_state: &AppState,
+    targets: &[(String, std::path::PathBuf)],
+    resolved_icons: &HashMap<String, String>,
+) -> Result<()> {
+    let mut runtime_apps = app_state
+        .runtime_apps
+        .lock()
+        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+    runtime_apps.store_icon_results(targets, resolved_icons);
+    Ok(())
+}
+
+fn normalized_bundle_ids(bundle_ids: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::with_capacity(bundle_ids.len());
+    let mut normalized = Vec::with_capacity(bundle_ids.len());
+
+    for bundle_id in bundle_ids {
+        let bundle_id = bundle_id.trim();
+        if bundle_id.is_empty() {
+            continue;
+        }
+
+        let bundle_id = bundle_id.to_string();
+        if seen.insert(bundle_id.clone()) {
+            normalized.push(bundle_id);
+        }
+    }
+
+    normalized
+}
+
+fn first_rule_bundle_ids(rules: &[AppRule], limit: usize) -> Vec<String> {
+    let mut seen = HashSet::with_capacity(limit);
+    let mut bundle_ids = Vec::with_capacity(limit);
+
+    for rule in rules {
+        if rule.bundle_id.trim().is_empty() {
+            continue;
+        }
+
+        if seen.insert(rule.bundle_id.clone()) {
+            bundle_ids.push(rule.bundle_id.clone());
+        }
+
+        if bundle_ids.len() >= limit {
+            break;
+        }
+    }
+
+    bundle_ids
+}
+
+async fn load_app_icons(
+    bundle_ids: Vec<String>,
+    app_state: &AppState,
+    app: &AppHandle,
+) -> Result<HashMap<String, String>> {
+    let bundle_ids = normalized_bundle_ids(bundle_ids);
+    if bundle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    if !runtime_metadata_complete(app_state, &bundle_ids)? {
+        let installed_apps =
+            tauri::async_runtime::spawn_blocking(crate::system_apps::get_installed_apps)
+                .await
+                .map_err(|e| {
+                    AppError::Config(format!("Failed to join app icon path scan: {e}"))
+                })??;
+        refresh_runtime_app_cache(app_state, &installed_apps, false)?;
+    }
+
+    let (mut icons, icon_targets) = cached_icon_state(app_state, &bundle_ids)?;
+    if icon_targets.is_empty() {
+        return Ok(icons);
+    }
+
+    let requested_targets = icon_targets.clone();
+    let resolved_icons = run_input_source_task_on_main_thread_async(
+        app.clone(),
+        "app icon lookup",
+        Duration::from_secs(5),
+        move || crate::app_icon::app_icon_data_urls(&requested_targets),
+    )
+    .await?;
+
+    store_icon_results(app_state, &icon_targets, &resolved_icons)?;
+    icons.extend(resolved_icons);
+    Ok(icons)
+}
+
+async fn warm_rule_icon_cache(
+    rules: &[AppRule],
+    app_state: &AppState,
+    app: &AppHandle,
+) -> Result<()> {
+    let bundle_ids = first_rule_bundle_ids(rules, FIRST_SCREEN_ICON_BATCH_SIZE);
+    if bundle_ids.is_empty() {
+        return Ok(());
+    }
+
+    let _ = load_app_icons(bundle_ids, app_state, app).await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -687,6 +820,47 @@ mod tests {
             .iter()
             .any(|app| app.bundle_id == "com.example.existing-ai"));
         assert!(!gaps.iter().any(|app| app.bundle_id == "com.example.stale"));
+    }
+
+    #[test]
+    fn test_normalized_bundle_ids_trims_and_deduplicates_preserving_order() {
+        let bundle_ids = normalized_bundle_ids(vec![
+            " com.example.alpha ".to_string(),
+            "".to_string(),
+            "com.example.beta".to_string(),
+            "com.example.alpha".to_string(),
+            "   ".to_string(),
+            "com.example.gamma".to_string(),
+        ]);
+
+        assert_eq!(
+            bundle_ids,
+            vec![
+                "com.example.alpha".to_string(),
+                "com.example.beta".to_string(),
+                "com.example.gamma".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_first_rule_bundle_ids_limits_to_first_screen_batch() {
+        let rules = vec![
+            test_rule("Alpha", "com.example.alpha", "abc", true),
+            test_rule("Beta", "com.example.beta", "abc", true),
+            test_rule("Alpha Duplicate", "com.example.alpha", "abc", true),
+            test_rule("Gamma", "com.example.gamma", "abc", true),
+        ];
+
+        let bundle_ids = first_rule_bundle_ids(&rules, 2);
+
+        assert_eq!(
+            bundle_ids,
+            vec![
+                "com.example.alpha".to_string(),
+                "com.example.beta".to_string(),
+            ]
+        );
     }
 
     #[test]

@@ -33,13 +33,15 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
     *   Use `Table` or `Card` list to display all configured apps.
     *   **Columns**: App Icon | App Name | Preferred Input Method (Dropdown: Only display system enabled input methods) | Action (Delete).
     *   **App names**: Display the localized app name that macOS shows for the installed app when available, for example Chinese systems should prefer names such as "微信" or "阿里云盘" over bundle fallback names such as "WeChat" or "aDrive".
-    *   **App icons**: Display the real macOS app icon for each rule when available, matching the icon shown by Finder, Launchpad, and System Settings. If the icon cannot be resolved, keep the existing rounded initial-letter fallback so the row remains visually stable.
+    *   **App icons**: Display the real macOS app icon for each rule when available, matching the icon shown by Finder, Launchpad, and System Settings. If the icon cannot be resolved after lookup, keep the existing rounded initial-letter fallback so the row remains visually stable.
+    *   **Icon loading behavior**: While an icon is still loading, use a neutral loading slot/skeleton rather than the initial-letter fallback. The letter fallback is reserved for confirmed lookup failure, so rows do not flash from a placeholder letter to a real icon.
+    *   **First-screen priority**: On first entry to Rules and immediately after scan/rescan redirects, request and settle icon loading for the first visible rows first. Remaining rows may continue loading in background once the first screen is visually stable.
     *   **Input method labels**: Dropdown labels should use macOS system-localized input source names, so Chinese systems show names such as "简体拼音" instead of English fallback labels like "Pinyin - Simplified" when the OS provides them.
     *   **System app scope**: Include a curated set of common input-capable macOS system apps, not every internal/background system bundle discovered under system directories. Prefer localized names for those system apps when available.
     *   **Top Bar**:
         *   **Search Bar** (placeholder: "搜索应用...") to quickly filter apps.
         *   **Rescan Button** on the right ("重新扫描") to trigger re-scan + AI prediction.
-        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning. Status text should make clear whether SmartIME is discovering apps, generating rules, or syncing cached rules.
+        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning. Status text should make clear whether SmartIME is discovering apps, generating rules, or syncing cached rules. Returning to Rules during or right after rescan should not cause first-screen rows to flash fallback initials before real icons arrive.
     *   *Animation*: Addition/Deletion of list items should trigger **Layout Animation** (like `layout` prop), making surrounding elements rearrange smoothly instead of instant jumping.
 *   **Footer**: Status bar, displaying "AI Prediction Enabled" or "Rules Synced".
 *   **General Settings Tab**:

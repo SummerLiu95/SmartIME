@@ -172,6 +172,27 @@ Manual validation:
 6.  Confirm scan progress uses real phase language rather than appearing stuck at 88%.
 7.  Confirm persisted rules contain only valid system input source IDs.
 
+### 4.9 App Icon Loading Optimization Plan
+
+Goal: eliminate first-screen placeholder flashes in the Rules list by adding runtime-only app metadata/icon caching and prioritizing visible-row icon loading on first entry and post-rescan return.
+
+Architecture:
+
+1.  Keep `AppRule` persistence unchanged; icon payloads stay out of `config.json`.
+2.  Add runtime app metadata and icon caches in Tauri state so icon lookup can reuse bundle-path knowledge without rescanning all installed apps for every request.
+3.  Warm or refresh those runtime caches during first scan and manual rescan.
+4.  On the Rules page, request icon batches in priority order: first the currently visible rows, then the remaining rows in background.
+5.  Reserve the initial-letter avatar for confirmed icon lookup failure; use a neutral pending state while an icon is still loading.
+
+| Task ID | Task Title | Dependencies | Files | Description | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **BE-ICON-01** | **Add Runtime App Metadata Cache** | BE-04, BE-05 | Modify `src-tauri/src/config.rs`, `src-tauri/src/command.rs`, `src-tauri/src/system_apps.rs` | Extend Tauri runtime state with an in-memory installed-app index keyed by bundle ID, suitable for reuse across Rules visits and rescans. | Rust tests cover cache population/refresh behavior; icon lookup no longer requires a full installed-app scan on every request path. |
+| **BE-ICON-02** | **Add Runtime Icon Cache and Invalidation Rules** | BE-ICON-01 | Modify `src-tauri/src/config.rs`, `src-tauri/src/command.rs`, `src-tauri/src/app_icon.rs` | Cache resolved icon payloads in memory only, and define refresh rules when apps are rescanned, moved, or disappear. | Repeated Rules visits reuse cached icons when valid; stale or missing bundles are refreshed or evicted without persisting icon data. |
+| **BE-ICON-03** | **Warm Caches During Scan and Rescan** | BE-ICON-02, BE-SCAN-PERF-05 | Modify `src-tauri/src/command.rs`, `src-tauri/src/system_apps.rs` | Update first-scan and manual-rescan flows so app metadata cache refresh happens alongside rule generation and can prewarm the Rules destination. | Entering Rules after scan/rescan avoids a cold full-rescan icon path; unchanged apps reuse cached bundle metadata. |
+| **FE-ICON-01** | **Prioritize First-Screen Icon Loading** | FE-MAIN-02, BE-ICON-01 | Modify `app/settings/rules/page.tsx`, `lib/api.ts` | Split icon requests into a first visible batch and background batches for the rest of the list. | On first Rules entry, visible rows request real icons first; off-screen rows do not block first-screen stability. |
+| **FE-ICON-02** | **Separate Pending vs Fallback Icon UI** | FE-ICON-01, BE-ICON-02 | Modify `app/settings/rules/page.tsx` | Replace the current initial-letter loading flash with a neutral pending state, while preserving the letter avatar as the true fallback when icon lookup fails. | First-screen rows do not flash from letters to real icons when resolution succeeds; unresolved apps still show a stable fallback avatar and remain editable. |
+| **QA-ICON-01** | **Rules Icon Loading Regression Pass** | BE-ICON-03, FE-ICON-02 | Manual validation, `docs/exec-plan/` record after implementation | Validate cold launch entry into Rules, post-onboarding redirect, post-rescan return, off-screen scrolling, and repeated revisit behavior in the bundled app. | `cargo fmt`, `cargo test`, `bun run build`, and bundled-app manual checks pass; first-screen rows avoid fallback-letter flashes; `config.json` contains no icon payloads; repeated visits/rescans do not leak native icon memory. |
+
 ## 5. Packaging & Distribution
 
 | Task ID | Task Title | Dependencies | Description | Acceptance Criteria |

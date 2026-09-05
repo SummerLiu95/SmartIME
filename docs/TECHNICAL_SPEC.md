@@ -110,7 +110,7 @@ SmartIME/
 | :--- | :--- | :--- |
 | `main.rs` | Tauri app bootstrap, global state registration, command binding, startup integration, close/reopen lifecycle. | `tauri`, `tauri-plugin-log`, `tauri-plugin-store` |
 | `command.rs` | IPC command layer for input sources, config, LLM operations, scanning, rescan lifecycle, and permissions. | `tauri::command`, `AppState` |
-| `config.rs` | Core config data models and JSON persistence (`config.json`) plus in-memory rule cache (`HashMap`). | `serde`, `serde_json`, `dirs`, `std::fs` |
+| `config.rs` | Core config data models and JSON persistence (`config.json`) plus in-memory rule cache (`HashMap`) and planned runtime-only app metadata/icon caches used to accelerate Rules rendering. | `serde`, `serde_json`, `dirs`, `std::fs`, `std::collections` |
 | `llm.rs` | LLM config/model client, config persistence (`llm_config.json`), connectivity checks, batch rule prediction calls, and response validation helpers. | `reqwest`, `dotenvy`, `serde` |
 | `input_source.rs` | macOS input source discovery/filtering, system-localized display-name resolution, current input-source query, and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, AppKit `NSTextInputContext`, `defaults export` parsing |
 | `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; localized app display-name resolution; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist`, `NSFileManager` |
@@ -195,7 +195,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 | `cmd_get_system_input_sources` | None | `Result<Vec<InputSource>, AppError>` | Fetch currently enabled/selectable system input sources on the main thread with system-localized display names when available. |
 | `cmd_select_input_source` | `id: String` | `Result<(), AppError>` | Switch to a specific input source ID on the main thread. |
 | `cmd_get_installed_apps` | None | `Result<Vec<SystemApp>, AppError>` | Scan installed apps under `/Applications`, `~/Applications`, `/System/Applications`, `/System/Cryptexes/App/System/Applications`, and `/System/Library/CoreServices`, then keep only curated input-capable system apps from system roots. |
-| `cmd_get_app_icons` | `bundle_ids: Vec<String>` | `Result<HashMap<String, String>, AppError>` | Resolve installed app bundle paths by bundle ID, render their macOS icons to PNG data URLs on the main thread, and return only successfully resolved icons. |
+| `cmd_get_app_icons` | `bundle_ids: Vec<String>` | `Result<HashMap<String, String>, AppError>` | Reuse runtime-installed-app metadata and icon caches where possible, resolve any missing bundle paths by bundle ID, render macOS icons to PNG data URLs on the main thread, and return only successfully resolved icons. |
 | `cmd_get_config` | None | `Result<AppConfig, AppError>` | Load app config from state/persistence. |
 | `cmd_has_config` | None | `Result<bool, AppError>` | Whether `config.json` exists. |
 | `cmd_save_config` | `config: AppConfig` | `Result<(), AppError>` | Save full config; apply general settings delta when changed. |
@@ -242,14 +242,19 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Backend discovers target apps and requests batch LLM prediction for the target set where possible.
     *   Frontend progress should present real phases; the scan UI must not imply exact per-app completion when the backend is waiting for a single batch LLM response.
     *   Build initial config (`global_switch=true`, `general.auto_start=false`, `general.hide_dock_icon=false`) and persist via `cmd_save_config`.
+    *   Scan flow may also warm runtime app metadata caches for the Rules page redirect target, but icon payloads remain runtime-only and are never persisted into `config.json`.
     *   Redirect to startup gate (`/`) then to `/settings/rules`.
 
 5.  **Rules page lifecycle**
     *   Initial load calls `cmd_get_config`, `cmd_get_system_input_sources`, and `cmd_is_rescanning` concurrently.
-    *   After rules are known, request runtime app icons through `cmd_get_app_icons` using current rule bundle IDs. Icons are UI cache only and are not persisted to `config.json`.
+    *   After rules are known, frontend derives a first-screen visible subset of rule bundle IDs and requests those icons through `cmd_get_app_icons` first.
+    *   Backend should reuse runtime app metadata and icon caches rather than rescanning the full installed-app set for every icon request. Icons remain UI/runtime cache only and are not persisted to `config.json`.
+    *   Once first-screen rows are visually stable, frontend may request remaining icon batches in background for off-screen rows.
+    *   Pending icon load and confirmed icon lookup failure are distinct UI states; the initial-letter avatar is reserved for true fallback only.
     *   Manual rule edits persist with `cmd_save_rules`.
     *   Rescan calls `cmd_rescan_and_save_rules` and polls `cmd_is_rescanning` until false, then reloads config + input sources.
     *   Rescan keeps valid existing manual and AI rules, prunes stale apps, normalizes invalid input source IDs, and calls LLM only for apps still missing a valid rule.
+    *   Rescan should also refresh the runtime app metadata cache and favor first-screen icon readiness when the user returns to Rules.
 
 6.  **Foreground app switching**
     *   `observer.rs` receives `NSWorkspaceDidActivateApplicationNotification`.

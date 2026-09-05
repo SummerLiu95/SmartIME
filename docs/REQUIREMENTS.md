@@ -156,6 +156,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   **Restriction**: When users manually modify rules, the selectable input method list must be obtained from the system in real-time, disallowing manual input of unknown input method IDs.
     *   App names shown in the Rules list must follow the same localized display name macOS shows for the installed app when available, for both system apps and third-party apps.
     *   The Rules list should display each managed app with its real macOS application icon when available. If icon loading fails or the app cannot be resolved, the UI must keep a stable fallback avatar and must not block rule editing.
+    *   Pending icon loading and confirmed icon lookup failure must be visually distinct states. For rows whose real icon is expected to resolve, especially first-screen visible rows, the UI must not temporarily show the initial-letter fallback as a loading placeholder before replacing it with the real icon.
 *   **FR-06 Global Switch**: Provide a global switch to "Pause Automatic Switching".
 *   **FR-07 Unmatched App Policy**:
     *   Unmatched applications use fixed behavior: keep current input source unchanged.
@@ -182,6 +183,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   Application rule names (`app_name`) are persisted as the latest localized display-name snapshot from scan/rescan. `bundle_id` remains the stable matching key.
     *   Input method names shown in the UI must use the same system-localized display names as macOS when available, while persisted rules continue to store stable input source IDs.
     *   App icons shown in the Rules list should be resolved from current installed app bundle paths at runtime and should not be persisted in `config.json`.
+    *   Runtime app metadata and icon results may be cached in memory only. On first entry to the Rules panel, and immediately after scan/rescan redirects or refreshes, icon loading should prioritize the first visible rows before off-screen rows continue loading in background.
     *   Input methods removed from the system must be pruned from in-app selectable options and rule data.
 *   **FR-12 Single-Instance Reactivation Semantics**:
     *   All app entry points (launch, Dock icon, tray icon, login-item startup) must resolve to one running process.
@@ -211,7 +213,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 
 ### 4.3 Compatibility
 *   **Operating System**: Supports macOS 12.0 (Monterey) and above.
-*   **Architecture**: Provides dual support for Apple Silicon (M1/M2/M3) and Intel architectures (Universal Binary).
+*   **Architecture**: Currently supports Apple Silicon (M1/M2/M3). Intel (`x86_64`) support remains a future roadmap item.
 
 ### 4.4 Usability
 *   **System Tray**: Application should reside in the menu bar and not occupy Dock space (Configurable).
@@ -220,5 +222,4 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 
 ### 4.5 Distribution Method
 *   **Homebrew Cask**: Must support installation and update via `brew install --cask <app-name>` to facilitate rapid deployment by the developer community.
-*   **Tag-driven Release Automation**: Pushing a release tag (format `v<version>`) must trigger CI to build a universal macOS DMG package automatically.
-*   **Release Artifact Scope**: Release pipeline must publish DMG artifact (`SmartIME_<version>_universal.dmg`) and checksum for Homebrew Cask updates.
+*   **Tag-driven Release Automation**: Pushing a release tag (format `v<version>`) must trigger CI to build the current Apple Silicon macOS DMG package automatically.
