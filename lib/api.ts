@@ -12,6 +12,12 @@ export type InstalledApp = {
 
 export type AppIconMap = Record<string, string>;
 
+export type RuleScanProgress = {
+  phase: "scanning_apps" | "generating_rules";
+  completed_apps: number;
+  total_apps: number;
+};
+
 export type AppRule = {
   bundle_id: string;
   app_name: string;
@@ -192,6 +198,19 @@ export const API = {
       return API._mock.config.rules;
     }
     return API._invoke('cmd_rescan_and_save_rules');
+  },
+
+  /**
+   * 监听批量规则预测的真实处理进度。
+   */
+  onRuleScanProgress: async (
+    callback: (progress: RuleScanProgress) => void
+  ): Promise<() => void> => {
+    if (!API._isTauri()) return () => {};
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen<RuleScanProgress>('rule_scan_progress', (event) => {
+      callback(event.payload);
+    });
   },
 
   /**

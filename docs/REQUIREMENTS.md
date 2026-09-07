@@ -144,7 +144,10 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   **Rule Source**: Completely rely on LLM for intelligent inference, system does not build in any static whitelist or predefined rules.
     *   Call LLM API to predict input method preference based on application name/category.
     *   Prediction should minimize network round trips by supporting batch prediction for multiple apps in one request when the configured provider supports OpenAI-compatible chat completions.
+    *   Large prediction sets must be split into batches of at most 20 apps with at most 2 requests in flight, so one slow provider response cannot invalidate the complete scan.
     *   Batch prediction output must be validated per app: unknown bundle IDs, missing apps, malformed responses, and input source IDs not present in the current system list must not be persisted as valid rules.
+    *   Failed, missing, or invalid predictions must remain without a rule and must never be persisted as `is_ai_generated: true` through a deterministic input-source fallback. A failed batch must not be retried automatically during the same scan; a later user-triggered rescan should request those missing rules again.
+    *   DeepSeek batch prediction must use non-thinking mode, request JSON output, and cap output tokens so simple rule classification does not exhaust the 60-second request timeout through unnecessary reasoning.
 *   **FR-03 Automatic Switching**:
     *   Real-time monitoring of macOS `NSWorkspace` active application change notifications.
     *   Complete input method switching call within 100ms based on the configuration table.
@@ -172,6 +175,7 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
     *   If user switches to another settings panel during scanning, scan must continue in background and final result must still be committed.
     *   When user returns to Rules panel before completion, loading state must still be visible until scan is done.
     *   Progress feedback must reflect real scan phases instead of presenting a fixed fake percentage that can appear stuck.
+    *   During LLM prediction, progress should display the settled app count (for example `20/79`) and update as each bounded batch completes. Individual provider failures remain in logs rather than adding a new UI error surface.
     *   Fast scan phases should remain visible briefly so stage transitions are perceptible, without delaying the long-running AI generation phase.
 *   **FR-10 Permission Action Separation**:
     *   Onboarding guide card triggers authorization request only.

@@ -29,6 +29,7 @@ tauri = { version = "2.6.2", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-core = "2.0.0-beta.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+futures-util = "0.3"
 tauri-plugin-store = "2.0.0-beta"
 cocoa = "0.26"
 objc = "0.2"

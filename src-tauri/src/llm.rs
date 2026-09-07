@@ -11,6 +11,8 @@ use zeroize::Zeroize;
 
 // Serialize migration and updates even when a prediction owns a cloned client.
 static CREDENTIAL_ACCESS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+const HTTP_REQUEST_TIMEOUT_SECONDS: u64 = 60;
+const DEEPSEEK_BATCH_MAX_TOKENS: u32 = 2048;
 
 fn credential_access() -> Result<std::sync::MutexGuard<'static, ()>> {
     CREDENTIAL_ACCESS
@@ -74,13 +76,26 @@ fn http_client() -> Result<Client> {
     Client::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECONDS))
         .build()
         .map_err(|_| AppError::Llm("无法初始化安全连接".into()))
 }
 
-fn safe_network_error(_: reqwest::Error) -> AppError {
-    AppError::Llm("网络请求失败，请检查服务地址和网络连接".into())
+fn safe_network_error(error: reqwest::Error, stage: &str) -> AppError {
+    if error.is_timeout() {
+        return AppError::Llm(format!(
+            "{stage}超时（{} 秒）",
+            HTTP_REQUEST_TIMEOUT_SECONDS
+        ));
+    }
+    if error.is_connect() {
+        return AppError::Llm("无法连接模型服务，请检查服务地址和网络连接".into());
+    }
+    if error.is_decode() {
+        return AppError::Llm("读取模型响应失败：响应不是有效的 API JSON".into());
+    }
+
+    AppError::Llm(format!("{stage}失败，请检查模型服务状态"))
 }
 
 #[derive(Clone)]
@@ -99,6 +114,24 @@ struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
+}
+
+#[derive(Debug, Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    mode: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ResponseFormat {
+    #[serde(rename = "type")]
+    format: &'static str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +233,10 @@ impl LLMClient {
                 content: "Hi".to_string(),
             }],
             temperature: 0.1,
+            thinking: is_deepseek_model(&config.model)
+                .then_some(ThinkingConfig { mode: "disabled" }),
+            max_tokens: is_deepseek_model(&config.model).then_some(16),
+            response_format: None,
         };
 
         let resp = client
@@ -209,7 +246,7 @@ impl LLMClient {
             .json(&request)
             .send()
             .await
-            .map_err(safe_network_error)?;
+            .map_err(|error| safe_network_error(error, "发送连接测试请求"))?;
 
         if !resp.status().is_success() {
             return Err(AppError::Llm(format!(
@@ -222,57 +259,18 @@ impl LLMClient {
     }
 
     pub async fn predict_batch(
-        config: LLMConfig,
+        config: &LLMConfig,
         apps: &[(String, String)],
         input_sources: &[InputSource],
+        preferred_language: Option<&str>,
     ) -> Result<HashMap<String, String>> {
         if apps.is_empty() {
             return Ok(HashMap::new());
         }
 
-        let sources_desc = input_sources
-            .iter()
-            .map(|s| format!("- ID: {}, Name: {}", s.id, s.name))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let apps_desc = apps
-            .iter()
-            .map(|(name, bundle_id)| format!("- Bundle ID: {bundle_id}, Name: {name}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let prompt = build_prediction_prompt(apps, input_sources, preferred_language);
 
-        let prompt = format!(
-            r#"You are an intelligent assistant for macOS input method switching.
-
-Available Input Sources:
-{sources_desc}
-
-Target Applications:
-{apps_desc}
-
-Task:
-Select the most appropriate input source ID for every target application.
-- For code editors (VS Code, IntelliJ, Terminal), English is usually preferred.
-- For chat apps (WeChat, WhatsApp), local language (Chinese) is often preferred, but depends on context.
-- For browsers, English is a safe default unless it is a specific Chinese site wrapper.
-
-Response Format:
-Return only a JSON object mapping each target Bundle ID to exactly one available input source ID.
-Example:
-{{"com.example.App":"com.apple.keylayout.ABC"}}
-"#,
-            sources_desc = sources_desc,
-            apps_desc = apps_desc
-        );
-
-        let request = ChatCompletionRequest {
-            model: config.model.clone(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            }],
-            temperature: 0.1,
-        };
+        let request = build_batch_prediction_request(config, prompt);
 
         let url = endpoint(&config.base_url)?;
         let resp = http_client()?
@@ -282,7 +280,7 @@ Example:
             .json(&request)
             .send()
             .await
-            .map_err(safe_network_error)?;
+            .map_err(|error| safe_network_error(error, "等待模型响应"))?;
 
         if !resp.status().is_success() {
             return Err(AppError::Llm(format!(
@@ -291,13 +289,85 @@ Example:
             )));
         }
 
-        let completion: ChatCompletionResponse = resp.json().await.map_err(safe_network_error)?;
+        let completion: ChatCompletionResponse = resp
+            .json()
+            .await
+            .map_err(|error| safe_network_error(error, "读取模型响应"))?;
         let Some(choice) = completion.choices.first() else {
             return Err(AppError::Llm("No response from AI".to_string()));
         };
 
         parse_batch_prediction_response(&choice.message.content, apps, input_sources)
     }
+}
+
+fn is_deepseek_model(model: &str) -> bool {
+    model.trim().to_ascii_lowercase().starts_with("deepseek-")
+}
+
+fn build_batch_prediction_request(config: &LLMConfig, prompt: String) -> ChatCompletionRequest {
+    let is_deepseek = is_deepseek_model(&config.model);
+
+    ChatCompletionRequest {
+        model: config.model.clone(),
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: prompt,
+        }],
+        temperature: 0.1,
+        thinking: is_deepseek.then_some(ThinkingConfig { mode: "disabled" }),
+        max_tokens: is_deepseek.then_some(DEEPSEEK_BATCH_MAX_TOKENS),
+        response_format: is_deepseek.then_some(ResponseFormat {
+            format: "json_object",
+        }),
+    }
+}
+
+fn build_prediction_prompt(
+    apps: &[(String, String)],
+    input_sources: &[InputSource],
+    preferred_language: Option<&str>,
+) -> String {
+    let sources_desc = input_sources
+        .iter()
+        .map(|s| format!("- ID: {}, Name: {}", s.id, s.name))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let apps_desc = apps
+        .iter()
+        .map(|(name, bundle_id)| format!("- Bundle ID: {bundle_id}, Name: {name}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let preferred_language = preferred_language.unwrap_or("unknown");
+
+    format!(
+        r#"You are an intelligent assistant for macOS input method switching.
+
+Available Input Sources:
+{sources_desc}
+
+User Context:
+- macOS preferred language: {preferred_language}
+
+Target Applications:
+{apps_desc}
+
+Task:
+Select the most appropriate input source ID for every target application.
+- For code editors (VS Code, IntelliJ, Terminal), English is usually preferred.
+- If a Chinese input source is available, prefer it for Chinese-first communication, content, productivity, and consumer apps such as WeChat, QQ, Kimi, Douyin, Notes, and Reminders.
+- Use the localized app name, Bundle ID, and macOS preferred language as evidence. Do not default every application to the first available input source.
+- For browsers, English is a safe default unless it is a specific Chinese site wrapper.
+
+Response Format:
+Return only a JSON object mapping each target Bundle ID to exactly one available input source ID.
+Example:
+{{"com.tencent.xinWeChat":"com.apple.inputmethod.SCIM.ITABC","com.microsoft.VSCode":"com.apple.keylayout.ABC"}}
+"#,
+        sources_desc = sources_desc,
+        apps_desc = apps_desc,
+        preferred_language = preferred_language
+    )
 }
 
 fn parse_batch_prediction_response(
@@ -526,5 +596,48 @@ mod tests {
         let parsed = parse_batch_prediction_response("not json", &test_apps(), &test_sources());
 
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn prediction_prompt_includes_locale_and_balanced_language_examples() {
+        let prompt = build_prediction_prompt(&test_apps(), &test_sources(), Some("zh-Hans-CN"));
+
+        assert!(prompt.contains("macOS preferred language: zh-Hans-CN"));
+        assert!(prompt.contains("com.tencent.xinWeChat"));
+        assert!(prompt.contains("com.apple.inputmethod.SCIM.ITABC"));
+        assert!(prompt.contains("com.microsoft.VSCode"));
+        assert!(prompt.contains("com.apple.keylayout.ABC"));
+    }
+
+    #[test]
+    fn deepseek_batch_request_disables_thinking_and_requires_json() {
+        let config = LLMConfig {
+            api_key: "test-key".to_string(),
+            model: "deepseek-v4-pro".to_string(),
+            base_url: "https://api.deepseek.com".to_string(),
+        };
+
+        let request = build_batch_prediction_request(&config, "predict these apps".to_string());
+        let payload = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(payload["thinking"]["type"], "disabled");
+        assert_eq!(payload["response_format"]["type"], "json_object");
+        assert_eq!(payload["max_tokens"], 2048);
+    }
+
+    #[test]
+    fn generic_provider_request_omits_deepseek_specific_controls() {
+        let config = LLMConfig {
+            api_key: "test-key".to_string(),
+            model: "custom-chat-model".to_string(),
+            base_url: "https://llm.example.com/v1".to_string(),
+        };
+
+        let request = build_batch_prediction_request(&config, "predict these apps".to_string());
+        let payload = serde_json::to_value(request).expect("serialize request");
+
+        assert!(payload.get("thinking").is_none());
+        assert!(payload.get("response_format").is_none());
+        assert!(payload.get("max_tokens").is_none());
     }
 }

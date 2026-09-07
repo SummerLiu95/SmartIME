@@ -2,13 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { API, AppConfig } from "@/lib/api";
+import { API, AppConfig, RuleScanProgress } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 
 type ScanPhase =
   | "loadingInputSources"
+  | "scanningApps"
   | "generatingRules"
   | "savingConfig"
   | "generated"
@@ -25,13 +26,21 @@ export default function ScanOnboardingPage() {
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [scanAttempt, setScanAttempt] = useState(0);
+  const [scanProgress, setScanProgress] = useState<RuleScanProgress | null>(null);
+
+  const predictionCountText = useMemo(() => {
+    if (!scanProgress || scanProgress.total_apps === 0) return "";
+    return ` ${scanProgress.completed_apps}/${scanProgress.total_apps}`;
+  }, [scanProgress]);
 
   const statusText = useMemo(() => {
     switch (phase) {
       case "loadingInputSources":
         return "读取输入法";
+      case "scanningApps":
+        return "扫描应用";
       case "generatingRules":
-        return "批量生成规则";
+        return `批量生成规则${predictionCountText}`;
       case "savingConfig":
         return "保存配置";
       case "generated":
@@ -39,14 +48,16 @@ export default function ScanOnboardingPage() {
       case "error":
         return "生成失败";
     }
-  }, [phase]);
+  }, [phase, predictionCountText]);
 
   const descriptionText = useMemo(() => {
     switch (phase) {
       case "loadingInputSources":
         return "正在读取系统输入法与键盘布局...";
+      case "scanningApps":
+        return "正在扫描可管理的应用...";
       case "generatingRules":
-        return "正在批量生成输入法规则...";
+        return `正在批量生成输入法规则${predictionCountText}...`;
       case "savingConfig":
         return "正在保存规则与基础配置...";
       case "generated":
@@ -54,14 +65,16 @@ export default function ScanOnboardingPage() {
       case "error":
         return "扫描或生成规则时遇到问题";
     }
-  }, [phase]);
+  }, [phase, predictionCountText]);
 
   const actionLabel = useMemo(() => {
     switch (phase) {
       case "loadingInputSources":
         return "读取输入法中...";
+      case "scanningApps":
+        return "扫描应用中...";
       case "generatingRules":
-        return "批量生成规则中...";
+        return `批量生成规则${predictionCountText}...`;
       case "savingConfig":
         return "保存配置中...";
       case "generated":
@@ -69,14 +82,16 @@ export default function ScanOnboardingPage() {
       case "error":
         return "重试扫描";
     }
-  }, [phase]);
+  }, [phase, predictionCountText]);
 
   useEffect(() => {
     setPhase("loadingInputSources");
     setProgress(0);
     setErrorMessage("");
+    setScanProgress(null);
 
     let active = true;
+    let unlistenProgress: (() => void) | undefined;
     const updatePhase = (nextPhase: ScanPhase, nextProgress: number) => {
       if (!active) return;
       setPhase(nextPhase);
@@ -102,14 +117,26 @@ export default function ScanOnboardingPage() {
 
     const runScan = async () => {
       try {
+        unlistenProgress = await API.onRuleScanProgress((nextProgress) => {
+          if (!active) return;
+          setScanProgress(nextProgress);
+          if (nextProgress.phase === "scanning_apps") {
+            setPhase("scanningApps");
+            setProgress(24);
+          } else if (nextProgress.total_apps > 0) {
+            setPhase("generatingRules");
+            const ratio = nextProgress.completed_apps / nextProgress.total_apps;
+            setProgress(30 + Math.round(ratio * 58));
+          }
+        });
         const inputSources = await runVisiblePhase(
           "loadingInputSources",
           18,
           API.getSystemInputSources
         );
         const generatedRules = await runVisiblePhase(
-          "generatingRules",
-          58,
+          "scanningApps",
+          24,
           () => API.scanAndPredict(inputSources)
         );
         if (!active) return;
@@ -143,6 +170,7 @@ export default function ScanOnboardingPage() {
 
     return () => {
       active = false;
+      unlistenProgress?.();
     };
   }, [scanAttempt]);
 

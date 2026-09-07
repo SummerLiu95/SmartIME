@@ -292,7 +292,7 @@ Keep identity aligned across:
 
 ### 3.14 Sending Batchable Data To External Services One Item At A Time
 
-**Mistake**: Sending each app to the LLM one by one to generate rules, reusing rescan gap-detection logic in the first onboarding scan, or parsing batch LLM JSON in a way that treats structured rule objects as generic string maps.
+**Mistake**: Sending each app to the LLM one by one, sending the complete installed-app set as one timeout-prone request, converting failed predictions into valid-looking AI fallback rules, reusing rescan gap detection in first onboarding, or parsing structured batch objects as generic string maps.
 
 **Why it is easy to miss**: Per-item code is straightforward to write and easy to test with a small local sample, but it creates terrible user experience when the real data set is dozens of apps and each item triggers network latency, provider queueing, or rate limits. First scan and manual rescan also both produce `AppRule` lists, but only rescan has existing rules that can be reused. Batch LLM responses can arrive as either a direct `{ bundle_id: input_source_id }` map or structured objects like `{ bundle_id, preferred_input }`; checking the generic map shape first can silently drop valid structured entries.
 
@@ -300,17 +300,21 @@ Keep identity aligned across:
 
 - When a feature processes many similar records, first evaluate batching, caching, deduplication, and incremental gap processing before writing a per-item external request loop.
 - Treat LLM/API calls as expensive UX boundaries; avoid N serial network calls when one batch call or a small number of bounded batches can produce the same result.
+- Bound both batch size and concurrency. One batch timeout must not discard successful results from unrelated batches.
 - First onboarding scan has no rule cache: batch-predict the full target app set, then align with an empty existing-rule list.
 - Manual rescan must read existing persisted rules first, preserve manual rules, reuse valid existing AI rules, predict only missing/new/invalid AI gaps, then align and persist.
 - Batch response parsing must validate both target bundle IDs and currently available input source IDs.
 - Parse structured rule items before generic string maps, so `{ bundle_id, preferred_input }` entries are not misclassified.
-- Provider errors, malformed JSON, or partial responses should not panic or fall back to serial N-request prediction; use valid partial results and deterministic alignment fallback.
+- Provider errors, malformed JSON, or partial responses should not panic or fall back to serial N-request prediction. Keep valid partial results, leave failed apps without a rule, do not retry failed batches during the same scan, and request those gaps only on a later user-triggered rescan.
+- DeepSeek rule classification must explicitly disable thinking, request JSON output, and bound output tokens. Its V4 models otherwise default to high-effort thinking, which can consume the full client timeout even for simple classification.
+- Never label a deterministic fallback as `is_ai_generated: true`; never label it manual either, because both values would suppress correct retry behavior.
+- Emit real settled-app progress for long-running batches and record failures through the application logger rather than terminal-only output.
 
 **Test method**:
 
 1.  Run `cd src-tauri && cargo test`.
 2.  Confirm parser tests cover direct maps, structured arrays, malformed JSON, unknown bundle IDs, and invalid input source IDs.
-3.  Confirm rescan gap tests cover manual preservation, valid AI-rule reuse, invalid AI-rule gaps, new app gaps, and stale app pruning.
+3.  Confirm batching tests cover the 20-app limit, missing-prediction omission, manual preservation, valid AI-rule reuse, invalid AI-rule gaps, new app gaps, stale app pruning, and legacy all-fallback recovery.
 4.  Run onboarding scan and manual rescan on the bundled app; unchanged rescans should avoid LLM calls for already valid rules.
 5.  During review, search for loops that call LLM/API/network functions per record and require a clear reason if they are intentionally serial.
 
@@ -330,6 +334,7 @@ Keep identity aligned across:
 | INC-010 | Trusting TIS localized names as final UI labels | Built-in input methods could show English fallback labels such as `Pinyin - Simplified` instead of the system-localized label users see in macOS. | Prefer AppKit input-source localized names, use a locale-gated built-in Apple fallback for known English labels, and fall back to TIS only when needed. | On a Chinese macOS system, Rules dropdown should show `简体拼音` or the current system-localized equivalent for Simplified Pinyin. |
 | INC-011 | Treating app names and icons as raw bundle metadata | Rule rows showed initial-letter placeholders and raw English bundle fallback names instead of the localized names and icons users see in macOS; review also found the native icon rendering path initially leaked retained Objective-C objects. | Resolve localized app names and real app icons from installed bundle paths at scan/rescan time, keep icon payloads out of persisted rules, fall back visually when lookup fails, and explicitly release/autorelease Cocoa objects created with ownership transfer. | In the bundled app, Rules rows should show localized names and real icons, `config.json` remains free of icon data, and repeated Rules visits/rescans should not leak native image memory. |
 | INC-012 | Sending batchable data to external services one item at a time | Initial rule generation sent each app to the LLM separately, making first scan and rescan painfully slow; the later optimization also briefly applied rescan-only gap detection to the first scan path, and batch parsing initially misclassified structured rule objects as a generic string map. | For similar records, consider batching/caching/incremental gaps before writing per-item API loops. Keep first scan as full batch prediction with empty existing rules; keep rescan as incremental gap prediction; parse structured batch entries before generic maps. | `cargo test` must cover first/rescan helper behavior and batch parser response shapes, and review should flag serial per-record LLM/API loops unless there is a clear product reason. |
+| INC-013 | Persisting a failed whole-set prediction as AI output | A 79-app request hit the 60-second provider timeout; the error became an empty result, alignment filled every app with the first input source (`ABC`), and rescan reused those fake AI rules forever. After batching, DeepSeek's default high-effort thinking still caused two 20-app batches to hit the same timeout, leaving 40 legitimate gaps. | Use bounded 20-app batches with concurrency 2, retain independent successes, omit failed predictions, and request missing rules only on a later rescan. For DeepSeek classification, disable thinking, require JSON output, cap output tokens, and preserve the timeout stage in safe logs. | Tests must prove batch sizing, omission instead of AI fallback, progress payloads, manual-safe recovery of the legacy full-fallback signature, and DeepSeek-specific request serialization without leaking those fields into generic providers. |
 
 ## 5. Testing Methods AI Should Prefer
 

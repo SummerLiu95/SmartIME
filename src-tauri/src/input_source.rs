@@ -471,7 +471,7 @@ fn is_simplified_pinyin_fallback(name: &str) -> bool {
     normalized.contains("pinyin") && normalized.contains("simplified")
 }
 
-fn preferred_language_identifier() -> Option<String> {
+pub(crate) fn preferred_language_identifier() -> Option<String> {
     unsafe {
         let languages = CFLocaleCopyPreferredLanguages();
         if languages.is_null() {

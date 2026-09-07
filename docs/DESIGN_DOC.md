@@ -20,7 +20,7 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
         *   `Model *`: Text input box (Input), default placeholder "gpt-4o".
         *   `Base URL`: Text input box, default placeholder "https://api.openai.com/v1".
     *   **Action**: "Test Connection" (loading feedback) -> "Save and Continue" after success. Disable edits during pending actions; show recoverable migration/save/delete errors. Browser preview clearly labels simulated tests and disables the virtual-key field.
-*   **Step 3: Scan & Generate**: Progress display should reflect real phases such as app discovery, input source loading, AI rule generation, and saving. Avoid a fixed fake percentage that can appear stuck while waiting for long-running LLM work. Very fast phases may use a short minimum display duration so users can perceive the transition without delaying long-running work.
+*   **Step 3: Scan & Generate**: Progress display should reflect real phases such as app discovery, input source loading, AI rule generation, and saving. During AI generation, show the settled app count such as `20/79` as bounded batches complete. Avoid a fixed fake percentage that can appear stuck while waiting for long-running LLM work. Very fast phases may use a short minimum display duration so users can perceive the transition without delaying long-running work.
 
 #### B. Main Settings Panel (Main Window)
 *   **Tabs**:
@@ -41,7 +41,7 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
     *   **Top Bar**:
         *   **Search Bar** (placeholder: "搜索应用...") to quickly filter apps.
         *   **Rescan Button** on the right ("重新扫描") to trigger re-scan + AI prediction.
-        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning. Status text should make clear whether SmartIME is discovering apps, generating rules, or syncing cached rules. Returning to Rules during or right after rescan should not cause first-screen rows to flash fallback initials before real icons arrive.
+        *   **Rescan Loading State**: Button shows spinner icon, reduced opacity, and disabled while scanning. Status text should make clear whether SmartIME is discovering apps, generating rules, or syncing cached rules; when prediction is needed, show settled app counts such as `20/79`. Returning to Rules during or right after rescan should not cause first-screen rows to flash fallback initials before real icons arrive.
     *   *Animation*: Addition/Deletion of list items should trigger **Layout Animation** (like `layout` prop), making surrounding elements rearrange smoothly instead of instant jumping.
 *   **Footer**: Status bar, displaying "AI Prediction Enabled" or "Rules Synced".
 *   **General Settings Tab**:

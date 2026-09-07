@@ -6,7 +6,13 @@ import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { API, AppConfig, AppIconMap, InputSource } from "@/lib/api";
+import {
+  API,
+  AppConfig,
+  AppIconMap,
+  InputSource,
+  RuleScanProgress,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Search, Trash2 } from "lucide-react";
 import { InputMethodSelector } from "@/components/settings/rules/input-method-selector";
@@ -64,6 +70,7 @@ export default function RulesPage() {
   const [appIcons, setAppIcons] = useState<AppIconMap>({});
   const [appIconStatus, setAppIconStatus] = useState<AppIconStatusMap>({});
   const [iconReloadToken, setIconReloadToken] = useState(0);
+  const [scanProgress, setScanProgress] = useState<RuleScanProgress | null>(null);
   const isMountedRef = useRef(false);
   const iconRequestIdRef = useRef(0);
   const lastIconReloadTokenRef = useRef(0);
@@ -72,8 +79,21 @@ export default function RulesPage() {
 
   useEffect(() => {
     isMountedRef.current = true;
+    let unlistenProgress: (() => void) | undefined;
+    API.onRuleScanProgress((nextProgress) => {
+      if (isMountedRef.current) {
+        setScanProgress(nextProgress);
+      }
+    }).then((unlisten) => {
+      if (isMountedRef.current) {
+        unlistenProgress = unlisten;
+      } else {
+        unlisten();
+      }
+    });
     return () => {
       isMountedRef.current = false;
+      unlistenProgress?.();
     };
   }, []);
 
@@ -323,6 +343,7 @@ export default function RulesPage() {
 
   const rescanRules = async () => {
     setIsRescanning(true);
+    setScanProgress(null);
     try {
       const merged = await API.rescanAndSaveRules();
       if (isMountedRef.current) {
@@ -397,7 +418,9 @@ export default function RulesPage() {
           >
             {isRescanning ? (
               <span className="inline-flex items-center">
-                同步中
+                {scanProgress && scanProgress.total_apps > 0
+                  ? `同步中 ${scanProgress.completed_apps}/${scanProgress.total_apps}`
+                  : "同步中"}
                 <span className="ml-1 inline-flex items-center gap-1" aria-hidden>
                   <span className="loading-dot" />
                   <span className="loading-dot loading-dot-2" />
@@ -493,7 +516,11 @@ export default function RulesPage() {
         <div className="flex items-center justify-between gap-4 px-6 h-8 border-t border-[#f4f4f5] dark:border-zinc-800/50 text-xs text-[#a1a1aa]">
           <span className="min-w-0 truncate">
             {isRescanning
-              ? "正在复用已有规则并生成缺失规则..."
+              ? scanProgress?.phase === "scanning_apps"
+                ? "正在扫描应用..."
+                : scanProgress && scanProgress.total_apps > 0
+                  ? `正在生成缺失规则 ${scanProgress.completed_apps}/${scanProgress.total_apps}...`
+                  : "正在复用已有规则并生成缺失规则..."
               : `${rules.length} 个受管应用`}
           </span>
           <span>{appVersion ? `v${appVersion}` : "v--"}</span>

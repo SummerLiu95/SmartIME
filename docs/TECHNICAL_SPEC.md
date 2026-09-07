@@ -219,6 +219,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 | Event Name | Payload | Description |
 | :--- | :--- | :--- |
 | `app_focused` | `{ bundle_id: String, app_name: String }` | Emitted by observer on foreground app change. Input switching is applied in backend in the same processing loop. |
+| `rule_scan_progress` | `{ phase: "scanning_apps" | "generating_rules", completed_apps: usize, total_apps: usize }` | Emitted at app discovery and after each bounded LLM batch settles so onboarding and rescan UI can show real stages and processed-app counts. |
 
 ### 4.2 Data Flow
 
@@ -244,8 +245,10 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 4.  **Initial scan bootstrap (`/onboarding/scan`)**
     *   Fetch input sources via `cmd_get_system_input_sources`.
     *   Call `cmd_scan_and_predict(input_sources)`.
-    *   Backend discovers target apps and requests batch LLM prediction for the target set where possible.
-    *   Frontend progress should present real phases; the scan UI must not imply exact per-app completion when the backend is waiting for a single batch LLM response.
+    *   Backend discovers target apps, splits prediction into batches of at most 20 apps, and runs at most 2 LLM requests concurrently.
+    *   Each batch is parsed and validated independently. Successful partial results are retained; failed, missing, or invalid results do not create fallback rules, are not retried during the same scan, and remain eligible for a later user-triggered rescan.
+    *   DeepSeek chat-completion batches explicitly disable thinking, request `json_object` output, and cap output at 2048 tokens. Other OpenAI-compatible providers retain the generic payload without DeepSeek-specific fields.
+    *   Frontend progress presents real phases and updates the settled-app count from `rule_scan_progress` events.
     *   Build initial config (`global_switch=true`, `general.auto_start=false`, `general.hide_dock_icon=false`) and persist via `cmd_save_config`.
     *   Scan flow may also warm runtime app metadata caches for the Rules page redirect target, but icon payloads remain runtime-only and are never persisted into `config.json`.
     *   Redirect to startup gate (`/`) then to `/settings/rules`.
@@ -258,7 +261,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Pending icon load and confirmed icon lookup failure are distinct UI states; the initial-letter avatar is reserved for true fallback only.
     *   Manual rule edits persist with `cmd_save_rules`.
     *   Rescan calls `cmd_rescan_and_save_rules` and polls `cmd_is_rescanning` until false, then reloads config + input sources.
-    *   Rescan keeps valid existing manual and AI rules, prunes stale apps, normalizes invalid input source IDs, and calls LLM only for apps still missing a valid rule.
+    *   Rescan keeps valid existing manual and AI rules, prunes stale apps, drops invalid AI rules, and calls LLM only for apps still missing a valid rule. It performs a narrowly scoped recovery for the legacy failure signature where at least 20 rules are all AI-generated, all point at the first input source, and another input source is available; manual rules are never removed by this recovery.
     *   Rescan should also refresh the runtime app metadata cache and favor first-screen icon readiness when the user returns to Rules.
 
 6.  **Foreground app switching**
@@ -339,14 +342,14 @@ type LLMConfig = { // Write/test input only; never used as a response or disk sc
     *   Prefer the localized app display name that macOS exposes for the installed bundle when available.
     *   If the system display name is only the plain `.app` filename, continue checking localized app resources before falling back to curated Simplified Chinese labels for supported system apps.
 2.  **Batch prediction**
-    *   Prefer one batch LLM call for a set of target apps using current `LLMConfig`.
+    *   Split target apps into requests of at most 20 records and keep at most 2 LLM requests in flight using current `LLMConfig`.
     *   Prompt includes available input source IDs/names and target apps (`name`, `bundle_id`).
     *   Response format should be strict JSON mapping bundle IDs to input source IDs.
-    *   If a provider response cannot be parsed or validated, the caller may retry in smaller batches or fall back to deterministic fallback rules rather than blocking indefinitely on per-app serial calls.
+    *   If a provider request times out or its response cannot be parsed or validated, keep successful batches and omit that batch's missing rules. Do not retry within the same scan and do not create deterministic fallback rules.
 3.  **Validation**
     *   If returned ID is not in `input_sources`, treat that app prediction as invalid.
     *   Ignore unknown returned bundle IDs and missing entries.
-    *   Prediction failures are logged and skipped; pipeline continues for other apps.
+    *   Prediction failures are logged with a safe stage-specific category such as connection, response wait timeout, or response decoding; provider bodies and credentials are never logged.
 4.  **Rule alignment**
     *   Preserve manual rules (`is_ai_generated == false`) first.
     *   Reuse existing valid rules, including AI-generated rules, where still relevant.

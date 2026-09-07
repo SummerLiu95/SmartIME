@@ -4,13 +4,38 @@ use crate::general_settings;
 use crate::input_source::{get_system_input_sources, select_input_source, InputSource};
 use crate::llm::{LLMConfig, LLMConfigStatus};
 use crate::system_apps::SystemApp;
+use futures_util::{stream, StreamExt};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const FIRST_SCREEN_ICON_BATCH_SIZE: usize = 8;
+const LLM_PREDICTION_BATCH_SIZE: usize = 20;
+const LLM_PREDICTION_MAX_CONCURRENCY: usize = 2;
+const RULE_SCAN_PROGRESS_EVENT: &str = "rule_scan_progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RuleScanPhase {
+    ScanningApps,
+    GeneratingRules,
+}
+
+#[derive(Clone, Serialize)]
+struct RuleScanProgress {
+    phase: RuleScanPhase,
+    completed_apps: usize,
+    total_apps: usize,
+}
+
+fn emit_rule_scan_progress(app: &AppHandle, progress: RuleScanProgress) {
+    if let Err(error) = app.emit(RULE_SCAN_PROGRESS_EVENT, progress) {
+        log::warn!("Failed to emit rule scan progress: {error}");
+    }
+}
 
 // Input Source Commands
 
@@ -167,8 +192,16 @@ pub async fn cmd_scan_and_predict(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Vec<AppRule>> {
+    emit_rule_scan_progress(
+        &app,
+        RuleScanProgress {
+            phase: RuleScanPhase::ScanningApps,
+            completed_apps: 0,
+            total_apps: 0,
+        },
+    );
     let target_apps = get_target_apps(&state, true)?;
-    let generated = predict_rules_for_apps(&target_apps, &input_sources, &state).await?;
+    let generated = predict_rules_for_apps(&target_apps, &input_sources, &state, &app).await?;
     let aligned = align_rules_with_apps(&target_apps, generated, &[], &input_sources);
     if let Err(err) = warm_rule_icon_cache(&aligned, &state, &app).await {
         eprintln!("Failed to warm app icon cache after initial scan: {err}");
@@ -195,6 +228,14 @@ pub async fn cmd_rescan_and_save_rules(
     };
 
     let input_sources = get_system_input_sources_on_main_thread(&app)?;
+    emit_rule_scan_progress(
+        &app,
+        RuleScanProgress {
+            phase: RuleScanPhase::ScanningApps,
+            completed_apps: 0,
+            total_apps: 0,
+        },
+    );
     let target_apps = get_target_apps(&state, true)?;
 
     let existing_rules = {
@@ -202,11 +243,11 @@ pub async fn cmd_rescan_and_save_rules(
             .config
             .lock()
             .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-        manager.get_config().rules
+        recover_legacy_full_fallback(manager.get_config().rules, &input_sources)
     };
 
     let apps_to_predict = apps_requiring_prediction(&target_apps, &existing_rules, &input_sources);
-    let generated = predict_rules_for_apps(&apps_to_predict, &input_sources, &state).await?;
+    let generated = predict_rules_for_apps(&apps_to_predict, &input_sources, &state, &app).await?;
     let aligned = align_rules_with_apps(&target_apps, generated, &existing_rules, &input_sources);
 
     {
@@ -307,6 +348,7 @@ async fn predict_rules_for_apps(
     target_apps: &[SystemApp],
     input_sources: &[InputSource],
     app_state: &AppState,
+    app: &AppHandle,
 ) -> Result<Vec<AppRule>> {
     if input_sources.is_empty() {
         return Err(AppError::InputSource(
@@ -333,14 +375,74 @@ async fn predict_rules_for_apps(
     let config = tauri::async_runtime::spawn_blocking(move || llm_client.request_config(None))
         .await
         .map_err(|_| AppError::Config("读取密钥失败".into()))??;
-    let predictions =
-        match crate::llm::LLMClient::predict_batch(config, &app_targets, input_sources).await {
-            Ok(predictions) => predictions,
-            Err(e) => {
-                eprintln!("Failed to batch predict app rules: {}", e);
-                HashMap::new()
+    let preferred_language = crate::input_source::preferred_language_identifier();
+    let total_apps = app_targets.len();
+    let mut completed_apps = 0;
+    let mut predictions = HashMap::new();
+    let batches = prediction_batches(&app_targets);
+    let batch_count = batches.len();
+
+    emit_rule_scan_progress(
+        app,
+        RuleScanProgress {
+            phase: RuleScanPhase::GeneratingRules,
+            completed_apps: 0,
+            total_apps,
+        },
+    );
+
+    let requests = batches.into_iter().enumerate().map(|(batch_index, batch)| {
+        let config = &config;
+        let preferred_language = preferred_language.as_deref();
+        async move {
+            let batch_size = batch.len();
+            let result = crate::llm::LLMClient::predict_batch(
+                config,
+                &batch,
+                input_sources,
+                preferred_language,
+            )
+            .await;
+            (batch_index, batch_size, result)
+        }
+    });
+    let mut requests = stream::iter(requests).buffer_unordered(LLM_PREDICTION_MAX_CONCURRENCY);
+
+    while let Some((batch_index, batch_size, result)) = requests.next().await {
+        completed_apps += batch_size;
+        match result {
+            Ok(batch_predictions) => {
+                if batch_predictions.len() != batch_size {
+                    log::warn!(
+                        "LLM rule prediction batch {}/{} returned {}/{} valid rules",
+                        batch_index + 1,
+                        batch_count,
+                        batch_predictions.len(),
+                        batch_size
+                    );
+                }
+                predictions.extend(batch_predictions);
             }
-        };
+            Err(error) => {
+                log::error!(
+                    "LLM rule prediction batch {}/{} failed for {} apps: {}",
+                    batch_index + 1,
+                    batch_count,
+                    batch_size,
+                    error
+                );
+            }
+        }
+
+        emit_rule_scan_progress(
+            app,
+            RuleScanProgress {
+                phase: RuleScanPhase::GeneratingRules,
+                completed_apps,
+                total_apps,
+            },
+        );
+    }
 
     Ok(target_apps
         .iter()
@@ -355,6 +457,39 @@ async fn predict_rules_for_apps(
                 })
         })
         .collect())
+}
+
+fn prediction_batches(apps: &[(String, String)]) -> Vec<Vec<(String, String)>> {
+    apps.chunks(LLM_PREDICTION_BATCH_SIZE)
+        .map(<[(String, String)]>::to_vec)
+        .collect()
+}
+
+fn recover_legacy_full_fallback(
+    existing_rules: Vec<AppRule>,
+    input_sources: &[InputSource],
+) -> Vec<AppRule> {
+    let Some(first_input_id) = input_sources.first().map(|source| source.id.as_str()) else {
+        return existing_rules;
+    };
+    let has_alternative_input = input_sources
+        .iter()
+        .any(|source| source.id != first_input_id);
+    let is_suspected_full_fallback = existing_rules.len() >= LLM_PREDICTION_BATCH_SIZE
+        && has_alternative_input
+        && existing_rules
+            .iter()
+            .all(|rule| rule.is_ai_generated && rule.preferred_input == first_input_id);
+
+    if is_suspected_full_fallback {
+        log::warn!(
+            "Discarding {} suspected legacy fallback rules before rescan",
+            existing_rules.len()
+        );
+        Vec::new()
+    } else {
+        existing_rules
+    }
 }
 
 fn apps_requiring_prediction(
@@ -404,37 +539,35 @@ fn align_rules_with_apps(
         .map(|rule| (rule.bundle_id.clone(), rule))
         .collect();
 
-    let fallback_input = input_sources
-        .first()
-        .map(|source| source.id.clone())
-        .unwrap_or_default();
+    let available_input_ids: HashSet<&str> = input_sources
+        .iter()
+        .map(|source| source.id.as_str())
+        .collect();
     let mut aligned = Vec::with_capacity(target_apps.len());
 
     for app in target_apps {
-        let mut selected = if let Some(rule) = manual_by_bundle.get(&app.bundle_id) {
-            rule.clone()
+        let selected = if let Some(rule) = manual_by_bundle.get(&app.bundle_id) {
+            Some(rule.clone())
         } else if let Some(rule) = generated_by_bundle.get(&app.bundle_id) {
-            rule.clone()
-        } else if let Some(rule) = existing_by_bundle.get(&app.bundle_id) {
-            rule.clone()
+            Some(rule.clone())
         } else {
-            AppRule {
-                bundle_id: app.bundle_id.clone(),
-                app_name: app.name.clone(),
-                preferred_input: fallback_input.clone(),
-                is_ai_generated: true,
-            }
+            existing_by_bundle
+                .get(&app.bundle_id)
+                .filter(|rule| available_input_ids.contains(rule.preferred_input.as_str()))
+                .cloned()
         };
 
-        selected.bundle_id = app.bundle_id.clone();
-        selected.app_name = app.name.clone();
-        aligned.push(selected);
+        if let Some(mut selected) = selected {
+            selected.bundle_id = app.bundle_id.clone();
+            selected.app_name = app.name.clone();
+            aligned.push(selected);
+        }
     }
 
     normalize_rule_inputs(aligned, input_sources)
 }
 
-fn normalize_rule_inputs(mut rules: Vec<AppRule>, input_sources: &[InputSource]) -> Vec<AppRule> {
+fn normalize_rule_inputs(rules: Vec<AppRule>, input_sources: &[InputSource]) -> Vec<AppRule> {
     let Some(fallback_id) = input_sources.first().map(|source| source.id.clone()) else {
         return rules;
     };
@@ -444,13 +577,19 @@ fn normalize_rule_inputs(mut rules: Vec<AppRule>, input_sources: &[InputSource])
         .map(|source| source.id.as_str())
         .collect();
 
-    for rule in &mut rules {
-        if !available_ids.contains(rule.preferred_input.as_str()) {
-            rule.preferred_input = fallback_id.clone();
-        }
-    }
-
     rules
+        .into_iter()
+        .filter_map(|mut rule| {
+            if available_ids.contains(rule.preferred_input.as_str()) {
+                return Some(rule);
+            }
+            if rule.is_ai_generated {
+                return None;
+            }
+            rule.preferred_input = fallback_id.clone();
+            Some(rule)
+        })
+        .collect()
 }
 
 fn filter_target_apps(apps: Vec<SystemApp>) -> Vec<SystemApp> {
@@ -849,6 +988,96 @@ mod tests {
     }
 
     #[test]
+    fn test_prediction_batches_limit_each_request_to_twenty_apps() {
+        let apps = (0..45)
+            .map(|index| (format!("App {index}"), format!("com.example.app-{index}")))
+            .collect::<Vec<_>>();
+
+        let batches = prediction_batches(&apps);
+
+        assert_eq!(
+            batches.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![20, 20, 5]
+        );
+    }
+
+    #[test]
+    fn test_rule_scan_progress_payload_uses_stable_field_names() {
+        let payload = serde_json::to_value(RuleScanProgress {
+            phase: RuleScanPhase::GeneratingRules,
+            completed_apps: 20,
+            total_apps: 79,
+        })
+        .expect("serialize progress");
+
+        assert_eq!(payload["phase"], "generating_rules");
+        assert_eq!(payload["completed_apps"], 20);
+        assert_eq!(payload["total_apps"], 79);
+    }
+
+    #[test]
+    fn test_align_rules_does_not_create_ai_rules_for_missing_predictions() {
+        let target_apps = vec![
+            test_system_app("Predicted", "com.example.predicted"),
+            test_system_app("Missing", "com.example.missing"),
+        ];
+        let generated = vec![test_rule(
+            "Predicted",
+            "com.example.predicted",
+            "com.apple.inputmethod.SCIM.ITABC",
+            true,
+        )];
+
+        let aligned = align_rules_with_apps(&target_apps, generated, &[], &test_input_sources());
+
+        assert_eq!(aligned.len(), 1);
+        assert_eq!(aligned[0].bundle_id, "com.example.predicted");
+    }
+
+    #[test]
+    fn test_suspected_legacy_full_fallback_is_removed_before_rescan() {
+        let existing = (0..20)
+            .map(|index| {
+                test_rule(
+                    &format!("App {index}"),
+                    &format!("com.example.app-{index}"),
+                    "com.apple.keylayout.ABC",
+                    true,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let recovered = recover_legacy_full_fallback(existing, &test_input_sources());
+
+        assert!(recovered.is_empty());
+    }
+
+    #[test]
+    fn test_legacy_fallback_recovery_never_removes_manual_rules() {
+        let mut existing = (0..19)
+            .map(|index| {
+                test_rule(
+                    &format!("App {index}"),
+                    &format!("com.example.app-{index}"),
+                    "com.apple.keylayout.ABC",
+                    true,
+                )
+            })
+            .collect::<Vec<_>>();
+        existing.push(test_rule(
+            "Manual",
+            "com.example.manual",
+            "com.apple.keylayout.ABC",
+            false,
+        ));
+
+        let recovered = recover_legacy_full_fallback(existing.clone(), &test_input_sources());
+
+        assert_eq!(recovered.len(), existing.len());
+        assert!(recovered.iter().any(|rule| !rule.is_ai_generated));
+    }
+
+    #[test]
     fn test_normalized_bundle_ids_trims_and_deduplicates_preserving_order() {
         let bundle_ids = normalized_bundle_ids(vec![
             " com.example.alpha ".to_string(),
@@ -963,7 +1192,7 @@ mod tests {
 
         let aligned = align_rules_with_apps(&target_apps, generated, &existing, &input_sources);
 
-        assert_eq!(aligned.len(), 4);
+        assert_eq!(aligned.len(), 3);
         assert_eq!(aligned[0].bundle_id, "com.example.alpha");
         assert_eq!(aligned[0].preferred_input, "com.apple.keylayout.ABC");
         assert!(!aligned[0].is_ai_generated);
@@ -971,15 +1200,12 @@ mod tests {
         assert_eq!(aligned[1].bundle_id, "com.example.beta");
         assert_eq!(aligned[1].preferred_input, "com.apple.keylayout.ABC");
 
-        assert_eq!(aligned[2].bundle_id, "com.example.delta");
-        assert_eq!(aligned[2].preferred_input, "com.apple.keylayout.ABC");
-
-        assert_eq!(aligned[3].bundle_id, "com.apple.Safari");
+        assert_eq!(aligned[2].bundle_id, "com.apple.Safari");
         assert_eq!(
-            aligned[3].preferred_input,
+            aligned[2].preferred_input,
             "com.apple.inputmethod.SCIM.ITABC"
         );
-        assert!(!aligned[3].is_ai_generated);
+        assert!(!aligned[2].is_ai_generated);
 
         assert!(!aligned
             .iter()
