@@ -333,6 +333,15 @@ Keep identity aligned across:
 
 ## 5. Testing Methods AI Should Prefer
 
+### Credential Storage Regression
+
+- Password fields and masked IPC responses do not protect plaintext files. Keep the disk schema separate from secret-bearing request types.
+- Run `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml` for migration/readback failure, atomic-write failure, replacement/deletion, destination binding, HTTP rejection, and corrupt-file behavior. These use fake credentials and a fake Keychain.
+- Run `bun test lib/api.test.mjs` to verify browser preview clears old storage and retains no submitted secret.
+- Native integration: `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml --bin smartime credentials::tests::native_keychain_roundtrip -- --ignored --exact` creates and deletes only a random disposable entry. Run outside a sandbox that blocks Keychain; never use a user's real key in test output.
+- Before release, verify the signed/bundled app's Keychain authorization, denied-access recovery, legacy migration, replacement/deletion across restart, and CSP-protected onboarding. Unit tests or an unsigned test binary do not establish bundled-app access behavior.
+- A successful migration cannot erase plaintext copies in existing backups or development `.env.llm`; do not create new plaintext backups or claim those old copies were securely erased.
+
 ### 5.1 Fast Iteration Checks
 
 Use these while coding:

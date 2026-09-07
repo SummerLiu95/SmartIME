@@ -36,6 +36,13 @@ export type LLMConfig = {
   base_url: string;
 };
 
+export type LLMConfigStatus = Omit<LLMConfig, 'api_key'> & { has_api_key: boolean };
+
+// Remove credentials left behind by older browser previews; never read them back.
+if (typeof window !== 'undefined') {
+  try { window.localStorage.removeItem('smartime_llm'); } catch {}
+}
+
 type TauriWindow = {
   __TAURI__?: object;
   __TAURI_INTERNALS__?: object;
@@ -284,9 +291,9 @@ export const API = {
   /**
    * 获取 LLM 配置
    */
-  getLLMConfig: async (): Promise<LLMConfig> => {
+  getLLMConfig: async (): Promise<LLMConfigStatus> => {
     if (!API._isTauri()) {
-      return API._mock.llm;
+      return { model: API._mock.llm.model, base_url: API._mock.llm.base_url, has_api_key: false };
     }
     return API._invoke('cmd_get_llm_config');
   },
@@ -296,13 +303,15 @@ export const API = {
    */
   saveLLMConfig: async (config: LLMConfig): Promise<void> => {
     if (!API._isTauri()) {
-      API._mock.llm = config;
-      try {
-        localStorage.setItem('smartime_llm', JSON.stringify(config));
-      } catch {}
+      API._mock.llm = { model: config.model, base_url: config.base_url, api_key: '' };
       return;
     }
     return API._invoke('cmd_save_llm_config', { config });
+  },
+
+  deleteLLMKey: async (): Promise<void> => {
+    if (!API._isTauri()) return;
+    return API._invoke('cmd_delete_llm_key');
   },
 
   /**

@@ -69,15 +69,11 @@ bun install
 
 ### Configure LLM credentials
 
-```bash
-cp .env.llm.example .env.llm
-```
+Use the app's LLM settings to save credentials in macOS Keychain. Base URLs must use HTTPS. Existing plaintext `llm_config.json` credentials migrate on first credential access; allow SmartIME's Keychain prompt if macOS requests it. Migration failure leaves the old file intact and reports an error.
 
-Then edit `.env.llm` with your local credentials:
+For development only, a debug build with no LLM config file can import `.env.llm` (copy `.env.llm.example`) or `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` environment variables into Keychain once. Release builds do not read this source. Remove the development plaintext key after successful import; the app does not edit your environment files. Existing config and Keychain errors never fall back to environment credentials.
 
-- `LLM_API_KEY`: LLM service API key
-- `LLM_MODEL`: Model name, such as `gpt-4o-mini`
-- `LLM_BASE_URL`: API base URL, defaulting to OpenAI-compatible endpoints
+Browser previews use a virtual key and simulated connection test; do not enter real credentials there.
 
 ### Run in development mode
 

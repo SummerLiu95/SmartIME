@@ -1,17 +1,35 @@
+use crate::credentials::{self, Keychain};
 use crate::error::{AppError, Result};
 use crate::input_source::InputSource;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+#[cfg(debug_assertions)]
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use zeroize::Zeroize;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Serialize migration and updates even when a prediction owns a cloned client.
+static CREDENTIAL_ACCESS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn credential_access() -> Result<std::sync::MutexGuard<'static, ()>> {
+    CREDENTIAL_ACCESS
+        .lock()
+        .map_err(|_| AppError::Config("密钥操作暂不可用，请重新启动应用".into()))
+}
+
+#[derive(Deserialize)]
 pub struct LLMConfig {
+    #[serde(default)]
     pub api_key: String,
     pub model: String,
     pub base_url: String,
+}
+
+impl Drop for LLMConfig {
+    fn drop(&mut self) {
+        self.api_key.zeroize();
+    }
 }
 
 impl Default for LLMConfig {
@@ -24,11 +42,50 @@ impl Default for LLMConfig {
     }
 }
 
+#[derive(Serialize)]
+pub struct LLMConfigStatus {
+    pub model: String,
+    pub base_url: String,
+    pub has_api_key: bool,
+}
+
+pub(crate) fn endpoint(base_url: &str) -> Result<reqwest::Url> {
+    let url = reqwest::Url::parse(base_url)
+        .map_err(|_| AppError::Config("请输入有效的 HTTPS 服务地址".into()))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(AppError::Config(
+            "服务地址必须使用 HTTPS，且不能包含账号、密码、查询参数或片段".into(),
+        ));
+    }
+    reqwest::Url::parse(&format!(
+        "{}/chat/completions",
+        url.as_str().trim_end_matches('/')
+    ))
+    .map_err(|_| AppError::Config("服务地址无效".into()))
+}
+
+fn http_client() -> Result<Client> {
+    Client::builder()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| AppError::Llm("无法初始化安全连接".into()))
+}
+
+fn safe_network_error(_: reqwest::Error) -> AppError {
+    AppError::Llm("网络请求失败，请检查服务地址和网络连接".into())
+}
+
 #[derive(Clone)]
 pub struct LLMClient {
-    client: Client,
-    config: LLMConfig,
-    file_path: PathBuf,
+    file_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,34 +120,51 @@ struct BatchPredictionItem {
 
 impl LLMClient {
     pub fn new() -> Self {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("smartime");
-        let _ = fs::create_dir_all(&config_dir);
-        let file_path = config_dir.join("llm_config.json");
-
-        // 优先读取持久化配置，随后回退到 .env.llm
-        let config = Self::load_from_file(&file_path)
-            .or_else(Self::load_from_env)
-            .unwrap_or_default();
-
         Self {
-            client: Client::new(),
-            config,
-            file_path,
+            file_path: dirs::config_dir().map(|root| root.join("smartime/llm_config.json")),
         }
     }
 
-    pub fn update_config(&mut self, config: LLMConfig) -> Result<()> {
-        self.config = config;
-        self.save_to_file()
+    fn path(&self) -> Result<&std::path::Path> {
+        self.file_path
+            .as_deref()
+            .ok_or_else(|| AppError::Config("无法定位用户配置目录".into()))
     }
 
-    pub fn get_config(&self) -> LLMConfig {
-        self.config.clone()
+    fn prepare(&self) -> Result<&std::path::Path> {
+        let path = self.path()?;
+        // Developer-only one-time import. Never fall back on corrupt files or Keychain errors.
+        #[cfg(debug_assertions)]
+        if !path.exists() {
+            if let Some(config) = Self::load_from_env() {
+                credentials::save(path, &Keychain, config)?;
+            }
+        }
+        Ok(path)
+    }
+
+    pub fn update_config(&mut self, config: LLMConfig) -> Result<()> {
+        let _access = credential_access()?;
+        credentials::save(self.path()?, &Keychain, config)
+    }
+
+    pub fn get_config(&self) -> Result<LLMConfigStatus> {
+        let _access = credential_access()?;
+        credentials::status(self.prepare()?, &Keychain)
+    }
+
+    pub fn request_config(&self, input: Option<LLMConfig>) -> Result<LLMConfig> {
+        let _access = credential_access()?;
+        credentials::resolve(self.prepare()?, &Keychain, input)
+    }
+
+    pub fn delete_key(&mut self) -> Result<()> {
+        let _access = credential_access()?;
+        credentials::delete(self.path()?, &Keychain)
     }
 
     /// 从 .env.llm 文件加载配置
+    #[cfg(debug_assertions)]
     fn load_from_env() -> Option<LLMConfig> {
         // 尝试加载 .env.llm
         let env_path = PathBuf::from(".env.llm");
@@ -110,28 +184,14 @@ impl LLMClient {
         })
     }
 
-    fn load_from_file(path: &Path) -> Option<LLMConfig> {
-        if !path.exists() {
-            return None;
-        }
-        let content = fs::read_to_string(path).ok()?;
-        serde_json::from_str(&content).ok()
-    }
-
-    fn save_to_file(&self) -> Result<()> {
-        let content = serde_json::to_string_pretty(&self.config)?;
-        fs::write(&self.file_path, content)?;
-        Ok(())
-    }
-
     /// 检查 LLM 连接配置是否有效
     pub async fn check_connection(config: &LLMConfig) -> Result<()> {
         if config.api_key.is_empty() {
             return Err(AppError::Llm("API Key cannot be empty".to_string()));
         }
 
-        let client = Client::new();
-        let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+        let client = http_client()?;
+        let url = endpoint(&config.base_url)?;
 
         let request = ChatCompletionRequest {
             model: config.model.clone(),
@@ -143,29 +203,29 @@ impl LLMClient {
         };
 
         let resp = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
+            .post(url)
+            .bearer_auth(&config.api_key)
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
-            .await?;
+            .await
+            .map_err(safe_network_error)?;
 
         if !resp.status().is_success() {
-            let error_text = resp.text().await?;
-            return Err(AppError::Llm(format!("Connection failed: {}", error_text)));
+            return Err(AppError::Llm(format!(
+                "连接失败（HTTP {}）",
+                resp.status().as_u16()
+            )));
         }
 
         Ok(())
     }
 
     pub async fn predict_batch(
-        &self,
+        config: LLMConfig,
         apps: &[(String, String)],
         input_sources: &[InputSource],
     ) -> Result<HashMap<String, String>> {
-        if self.config.api_key.is_empty() {
-            return Err(AppError::Llm("API Key not configured".to_string()));
-        }
         if apps.is_empty() {
             return Ok(HashMap::new());
         }
@@ -206,7 +266,7 @@ Example:
         );
 
         let request = ChatCompletionRequest {
-            model: self.config.model.clone(),
+            model: config.model.clone(),
             messages: vec![ChatMessage {
                 role: "user".to_string(),
                 content: prompt,
@@ -214,26 +274,24 @@ Example:
             temperature: 0.1,
         };
 
-        let url = format!(
-            "{}/chat/completions",
-            self.config.base_url.trim_end_matches('/')
-        );
-
-        let resp = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
+        let url = endpoint(&config.base_url)?;
+        let resp = http_client()?
+            .post(url)
+            .bearer_auth(&config.api_key)
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
-            .await?;
+            .await
+            .map_err(safe_network_error)?;
 
         if !resp.status().is_success() {
-            let error_text = resp.text().await?;
-            return Err(AppError::Llm(format!("API request failed: {}", error_text)));
+            return Err(AppError::Llm(format!(
+                "请求失败（HTTP {}）",
+                resp.status().as_u16()
+            )));
         }
 
-        let completion: ChatCompletionResponse = resp.json().await?;
+        let completion: ChatCompletionResponse = resp.json().await.map_err(safe_network_error)?;
         let Some(choice) = completion.choices.first() else {
             return Err(AppError::Llm("No response from AI".to_string()));
         };
@@ -360,16 +418,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_load_env() {
-        // 设置环境变量进行测试
-        std::env::set_var("LLM_API_KEY", "test-key");
-        std::env::set_var("LLM_MODEL", "test-model");
-
-        let config = LLMClient::load_from_env();
-        assert!(config.is_some());
-        let c = config.unwrap();
-        assert_eq!(c.api_key, "test-key");
-        assert_eq!(c.model, "test-model");
+    fn endpoints_reject_cleartext_and_embedded_secrets() {
+        for url in [
+            "http://example.com/v1",
+            "http://127.0.0.1:8080",
+            "https://user:pass@example.com",
+            "https://example.com?key=secret",
+            "https://example.com/#secret",
+            "file:///tmp/key",
+        ] {
+            assert!(endpoint(url).is_err(), "accepted {url}");
+        }
+        assert_eq!(
+            endpoint("https://example.com/v1/").unwrap().as_str(),
+            "https://example.com/v1/chat/completions"
+        );
     }
 
     fn test_apps() -> Vec<(String, String)> {

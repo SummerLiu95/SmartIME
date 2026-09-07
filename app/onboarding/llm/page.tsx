@@ -21,29 +21,42 @@ export default function LLMOnboardingPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [status, setStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [savedBaseUrl, setSavedBaseUrl] = useState("");
+  const [preview, setPreview] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const canReuseKey = hasApiKey && config.base_url.replace(/\/+$/, '') === savedBaseUrl.replace(/\/+$/, '');
 
   useEffect(() => {
+    const isPreview = !API._isTauri();
+    setPreview(isPreview);
+    if (isPreview) setConfig(prev => ({ ...prev, api_key: 'demo-key' }));
     loadConfig();
   }, []);
 
   const loadConfig = async () => {
     try {
       const savedConfig = await API.getLLMConfig();
+      setHasApiKey(savedConfig.has_api_key);
+      setSavedBaseUrl(savedConfig.base_url);
       if (savedConfig.base_url) {
           setConfig(prev => ({
               ...prev,
               model: savedConfig.model || prev.model,
               base_url: savedConfig.base_url || prev.base_url,
-              api_key: savedConfig.api_key === "******" ? "" : savedConfig.api_key
+              api_key: API._isTauri() ? "" : "demo-key"
           }));
       }
     } catch (e) {
-      console.error("Failed to load config", e);
+      setStatus("error");
+      setErrorMsg(typeof e === "string" ? e : "读取配置失败，请重试");
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleTestConnection = async () => {
-    if (!config.api_key) {
+    if (!config.api_key && !canReuseKey) {
       setErrorMsg("请输入 API Key");
       setStatus("error");
       return;
@@ -56,7 +69,6 @@ export default function LLMOnboardingPage() {
       await API.checkLLMConnection(config);
       setStatus("success");
     } catch (error) {
-      console.error("Connection failed", error);
       setStatus("error");
       const message =
         typeof error === "string"
@@ -69,12 +81,31 @@ export default function LLMOnboardingPage() {
   };
 
   const handleSaveAndContinue = async () => {
+    setBusy(true);
     try {
       await API.saveLLMConfig(config);
+      setConfig(prev => ({ ...prev, api_key: "" }));
       router.push("/onboarding/scan");
     } catch (e) {
-      console.error("Failed to save", e);
+      setStatus("error");
+      setErrorMsg(typeof e === "string" ? e : "保存失败，请重试");
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const handleDeleteKey = async () => {
+    setBusy(true);
+    try {
+      await API.deleteLLMKey();
+      setHasApiKey(false);
+      setConfig(prev => ({ ...prev, api_key: "" }));
+      setStatus("idle");
+      setErrorMsg("");
+    } catch (error) {
+      setStatus("error");
+      setErrorMsg(typeof error === "string" ? error : "删除失败，请重试");
+    } finally { setBusy(false); }
   };
 
   return (
@@ -94,7 +125,7 @@ export default function LLMOnboardingPage() {
             LLM 设置
           </h1>
           <p className="text-sm leading-5 text-[#71717b] dark:text-[#a1a1aa] tracking-[-0.15px] px-1">
-            配置 AI 模型以获得更精准的自动切换建议。
+            {preview ? "浏览器演示：使用虚拟密钥，连接测试为模拟结果。" : "配置 AI 模型以获得更精准的自动切换建议。"}
           </p>
         </div>
 
@@ -118,12 +149,15 @@ export default function LLMOnboardingPage() {
               <Input
                 id="api_key"
                 type={showApiKey ? "text" : "password"}
+                disabled={preview || busy || status === "testing"}
+                autoComplete="off"
+                spellCheck={false}
                 value={config.api_key}
                 onChange={(e) => {
                     setConfig({ ...config, api_key: e.target.value });
                     if (status !== 'idle') setStatus('idle');
                 }}
-                placeholder="sk-..."
+                placeholder={canReuseKey ? "已安全保存，留空使用现有密钥" : "sk-..."}
                 className={cn(
                     "bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
                     "h-[38px] rounded-[10px] px-[11px] py-[7px]",
@@ -140,6 +174,11 @@ export default function LLMOnboardingPage() {
                 {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {hasApiKey && !preview && (
+              <button type="button" className="text-xs text-red-600" disabled={busy || status === "testing"} onClick={handleDeleteKey}>
+                删除已保存的密钥
+              </button>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -147,7 +186,8 @@ export default function LLMOnboardingPage() {
             <Input
                 id="model"
                 value={config.model}
-                onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                disabled={busy || status === "testing"}
+                onChange={(e) => { setConfig({ ...config, model: e.target.value }); setStatus("idle"); }}
                 placeholder="e.g. gpt-4o-mini"
                 className={cn(
                     "bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
@@ -163,7 +203,8 @@ export default function LLMOnboardingPage() {
             <Input
                 id="base_url"
                 value={config.base_url}
-                onChange={(e) => setConfig({ ...config, base_url: e.target.value })}
+                disabled={busy || status === "testing"}
+                onChange={(e) => { setConfig({ ...config, base_url: e.target.value }); setStatus("idle"); }}
                 placeholder="https://api.openai.com/v1"
                 className={cn(
                     "bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
@@ -189,10 +230,16 @@ export default function LLMOnboardingPage() {
               </span>
             )}
             {status === "error" && (
-              <span className="flex items-center gap-1.5 text-red-600">
-                <AlertCircle className="h-3 w-3" />
-                {errorMsg}
-              </span>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="flex items-center gap-1.5 text-red-600">
+                  <AlertCircle className="h-3 w-3" />
+                  {errorMsg}
+                </span>
+                <button type="button" className="text-blue-600" disabled={busy}
+                  onClick={() => { setBusy(true); void loadConfig(); }}>
+                  重新读取配置
+                </button>
+              </div>
             )}
           </div>
 
@@ -212,7 +259,7 @@ export default function LLMOnboardingPage() {
               "transition-all duration-200"
             )}
             onClick={status === "success" ? handleSaveAndContinue : handleTestConnection}
-            disabled={status === "testing" || !config.api_key}
+            disabled={busy || status === "testing" || (!config.api_key && !canReuseKey)}
           >
             {status === "success" ? (
                 <span className="flex items-center gap-2">

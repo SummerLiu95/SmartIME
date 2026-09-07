@@ -209,7 +209,9 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 ### 4.2 Security & Privacy
 *   **Permission Minimization**: Only request necessary "Accessibility" or "Input Monitoring" permissions.
 *   **Data Privacy**: Application lists and input habit data are stored locally only and are not uploaded to the cloud unless explicitly agreed by the user.
-*   **Credential Security**: Sensitive information like API Keys must be stored encrypted or using the System Keychain.
+*   **Credential Security**: API Keys must be stored in macOS Keychain; ordinary config and browser storage must not contain them. Frontend reads return configuration status only. Support replacing/deleting a saved key; reusing it is allowed only for its bound service address.
+*   **Credential Migration**: Existing plaintext keys migrate only after a verified Keychain write; failure preserves the source and reports a recoverable error without a plaintext fallback. Deletion must persist across restart.
+*   **Credential Transport**: Require HTTPS for all provider requests, reject embedded URL credentials/query/fragment, and do not follow redirects. Provider error bodies and raw keys must not enter UI/log output. Browser preview uses clearly labeled virtual credentials and simulated tests.
 
 ### 4.3 Compatibility
 *   **Operating System**: Supports macOS 12.0 (Monterey) and above.

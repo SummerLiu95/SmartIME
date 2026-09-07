@@ -4,6 +4,7 @@
 mod app_icon;
 mod command;
 mod config;
+mod credentials;
 mod error;
 mod general_settings;
 mod input_source;
@@ -81,6 +82,7 @@ fn main() {
             command::cmd_has_config,
             command::cmd_save_llm_config,
             command::cmd_get_llm_config,
+            command::cmd_delete_llm_key,
             command::cmd_check_llm_connection,
             command::cmd_scan_and_predict,
             command::cmd_rescan_and_save_rules,

@@ -3693,6 +3693,7 @@ dependencies = [
  "once_cell",
  "plist",
  "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
  "tauri",
@@ -3701,7 +3702,9 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-store",
  "thiserror 2.0.18",
+ "uuid",
  "walkdir",
+ "zeroize",
 ]
 
 [[package]]

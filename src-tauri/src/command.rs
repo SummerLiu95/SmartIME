@@ -2,13 +2,13 @@ use crate::config::{AppConfig, AppRule, AppState};
 use crate::error::{AppError, Result};
 use crate::general_settings;
 use crate::input_source::{get_system_input_sources, select_input_source, InputSource};
-use crate::llm::LLMConfig;
+use crate::llm::{LLMConfig, LLMConfigStatus};
 use crate::system_apps::SystemApp;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 const FIRST_SCREEN_ICON_BATCH_SIZE: usize = 8;
 
@@ -104,32 +104,61 @@ pub fn cmd_has_config(state: State<'_, AppState>) -> Result<bool> {
 // LLM Commands
 
 #[tauri::command]
-pub async fn cmd_check_llm_connection(config: LLMConfig) -> Result<bool> {
+pub async fn cmd_check_llm_connection(config: LLMConfig, app: AppHandle) -> Result<bool> {
+    let config = tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let llm = state
+            .llm
+            .lock()
+            .map_err(|_| AppError::Config("配置暂不可用".into()))?;
+        llm.request_config(Some(config))
+    })
+    .await
+    .map_err(|_| AppError::Config("读取密钥失败".into()))??;
     crate::llm::LLMClient::check_connection(&config).await?;
     Ok(true)
 }
 
 #[tauri::command]
-pub fn cmd_save_llm_config(config: LLMConfig, state: State<'_, AppState>) -> Result<()> {
-    let mut llm = state
-        .llm
-        .lock()
-        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-    llm.update_config(config)
+pub async fn cmd_save_llm_config(config: LLMConfig, app: AppHandle) -> Result<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut llm = state
+            .llm
+            .lock()
+            .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+        llm.update_config(config)
+    })
+    .await
+    .map_err(|_| AppError::Config("保存配置失败".into()))?
 }
 
 #[tauri::command]
-pub fn cmd_get_llm_config(state: State<'_, AppState>) -> Result<LLMConfig> {
-    let llm = state
-        .llm
-        .lock()
-        .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-    let mut config = llm.get_config();
-    // 脱敏处理
-    if !config.api_key.is_empty() {
-        config.api_key = "******".to_string();
-    }
-    Ok(config)
+pub async fn cmd_get_llm_config(app: AppHandle) -> Result<LLMConfigStatus> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let llm = state
+            .llm
+            .lock()
+            .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
+        llm.get_config()
+    })
+    .await
+    .map_err(|_| AppError::Config("读取配置失败".into()))?
+}
+
+#[tauri::command]
+pub async fn cmd_delete_llm_key(app: AppHandle) -> Result<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut llm = state
+            .llm
+            .lock()
+            .map_err(|_| AppError::Config("配置暂不可用".into()))?;
+        llm.delete_key()
+    })
+    .await
+    .map_err(|_| AppError::Config("删除密钥失败".into()))?
 }
 
 #[tauri::command]
@@ -293,13 +322,6 @@ async fn predict_rules_for_apps(
             .llm
             .lock()
             .map_err(|e| crate::error::AppError::Lock(e.to_string()))?;
-        let config = guard.get_config();
-        if config.api_key.trim().is_empty()
-            || config.model.trim().is_empty()
-            || config.base_url.trim().is_empty()
-        {
-            return Err(AppError::Llm("LLM configuration is incomplete".to_string()));
-        }
         guard.clone()
     };
 
@@ -308,13 +330,17 @@ async fn predict_rules_for_apps(
         .map(|app| (app.name.clone(), app.bundle_id.clone()))
         .collect::<Vec<_>>();
 
-    let predictions = match llm_client.predict_batch(&app_targets, input_sources).await {
-        Ok(predictions) => predictions,
-        Err(e) => {
-            eprintln!("Failed to batch predict app rules: {}", e);
-            HashMap::new()
-        }
-    };
+    let config = tauri::async_runtime::spawn_blocking(move || llm_client.request_config(None))
+        .await
+        .map_err(|_| AppError::Config("读取密钥失败".into()))??;
+    let predictions =
+        match crate::llm::LLMClient::predict_batch(config, &app_targets, input_sources).await {
+            Ok(predictions) => predictions,
+            Err(e) => {
+                eprintln!("Failed to batch predict app rules: {}", e);
+                HashMap::new()
+            }
+        };
 
     Ok(target_apps
         .iter()
