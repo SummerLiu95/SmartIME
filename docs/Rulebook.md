@@ -318,6 +318,31 @@ Keep identity aligned across:
 4.  Run onboarding scan and manual rescan on the bundled app; unchanged rescans should avoid LLM calls for already valid rules.
 5.  During review, search for loops that call LLM/API/network functions per record and require a clear reason if they are intentionally serial.
 
+### 3.15 Inferring The LLM Provider From URLs Or Model Names
+
+**Mistake**: Exposing a free-form Base URL in settings while the backend speaks only one wire protocol, adding a provider selector only to the frontend form, or inferring the provider/protocol from the model name string.
+
+**Why it is easy to miss**: DeepSeek and many gateways are OpenAI-compatible, so a single-protocol client appears to work during development. Model-name inference also looks correct for common names such as `deepseek-*` or `claude-*`, but silently misroutes arbitrary valid model names, and a form-only provider selector still sends OpenAI-shaped payloads to Anthropic or Gemini native endpoints.
+
+**Correct behavior**:
+
+- Treat the provider as part of the persisted config model, the Keychain credential binding, and the IPC contract — never as a frontend-only concern.
+- Resolve the explicit provider to a native protocol adapter (`genai::adapter::AdapterKind`) and a provider-managed endpoint; do not expose custom service addresses in the UI.
+- Bind saved-key reuse to the unchanged provider: a blank API key reuses the stored key only for the same provider, and switching providers requires a new key.
+- Migrate legacy `base_url` configs and Base-URL-bound credentials through one-time inference (`LLMProvider::infer_legacy`), then drop the legacy field on the next successful save. Never keep inference on the hot request path.
+- Apply the shared request policy on every provider: HTTPS-only, no redirects, 60-second timeout, bounded output tokens, JSON mode for batch prediction, and disabled reasoning for DeepSeek classification.
+
+**Test method**:
+
+1.  Run `cd src-tauri && cargo test`.
+2.  Confirm `explicit_provider_selects_native_genai_adapter` maps each provider to its native adapter without model-string inference.
+3.  Confirm `legacy_provider_is_inferred_from_model_or_service_address` covers legacy migration inference only.
+4.  Confirm `cannot_reuse_key_for_different_provider_and_delete_survives_reload` proves provider-bound key reuse.
+5.  Confirm `batch_options_are_bounded_and_request_json_for_every_provider` proves the shared bounded/JSON policy and DeepSeek-only reasoning disablement.
+6.  On the bundled app, verify onboarding shows the provider selector with no Base URL field, and a legacy Base-URL config migrates on first credential access.
+
+**Related files**: `src-tauri/src/llm.rs`, `src-tauri/src/credentials.rs`, `lib/api.ts`, `app/onboarding/llm/page.tsx`
+
 ## 4. Incident Catalog
 
 | Incident ID | AI-prone mistake | What Happened | Corrective Lesson | Regression Test |
@@ -341,7 +366,7 @@ Keep identity aligned across:
 ### Credential Storage Regression
 
 - Password fields and masked IPC responses do not protect plaintext files. Keep the disk schema separate from secret-bearing request types.
-- Run `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml` for migration/readback failure, atomic-write failure, replacement/deletion, destination binding, HTTP rejection, and corrupt-file behavior. These use fake credentials and a fake Keychain.
+- Run `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml` for migration/readback failure, atomic-write failure, replacement/deletion, provider binding, legacy Base URL inference, and corrupt-file behavior. These use fake credentials and a fake Keychain.
 - Run `bun test lib/api.test.mjs` to verify browser preview clears old storage and retains no submitted secret.
 - Native integration: `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml --bin smartime credentials::tests::native_keychain_roundtrip -- --ignored --exact` creates and deletes only a random disposable entry. Run outside a sandbox that blocks Keychain; never use a user's real key in test output.
 - Before release, verify the signed/bundled app's Keychain authorization, denied-access recovery, legacy migration, replacement/deletion across restart, and CSP-protected onboarding. Unit tests or an unsigned test binary do not establish bundled-app access behavior.
@@ -395,3 +420,4 @@ Run this matrix on a bundled app before release:
 9.  Dock/tray behavior: hide/show Dock transitions and window reactivation behavior are stable.
 10.  Login item behavior: startup works without duplicate process/icon side effects.
 11.  Identity and distribution: metadata aligns across Rust, Tauri, bundled app, release artifact, and cask surfaces.
+12.  LLM provider setup: onboarding offers DeepSeek, OpenAI, Anthropic, and Gemini with provider-managed endpoints and no Base URL field; a blank API key reuses the saved key only for the unchanged provider; a legacy Base-URL-based `llm_config.json` migrates to a provider-bound Keychain credential on first access; connection test and first scan succeed with a real key on the configured provider.
