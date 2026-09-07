@@ -137,11 +137,12 @@ bun run lint
 Future development plans include but are not limited to:
 
 - [x] **System Apps Support**: Extend support to macOS system applications (e.g., Safari).
+- [x] **Multi-Provider LLM Support**: Support DeepSeek, OpenAI, Anthropic, and Google Gemini with provider-managed endpoints.
 - [ ] **Universal Build Support**: Support Intel chips (x86_64) to provide universal binary packaging.
 - [ ] ~~**Focus Indicator**: Display a visual indicator of the current input method when the input cursor is focused.~~
 - [ ] **Website-Based Switching**: Enable automatic input method switching in browsers based on the specific website being visited.
 - [x] **Scan Performance Optimization**: Reduce first-run scan and manual rescan latency by improving LLM prediction batching, caching, and progress feedback.
-- [ ] **App Icon Loading Optimization**: Avoid initial placeholder flashes in the Rules list by improving runtime icon caching and first-screen loading behavior.
+- [x] **App Icon Loading Optimization**: Avoid initial placeholder flashes in the Rules list by improving runtime icon caching and first-screen loading behavior.
 - [ ] **Built-in Local Model**: Integrate a built-in tiny LLM or lightweight classification model to remove dependency on third-party API keys.
 - [ ] **UI Enhancement**: Improve the user interface for better usability and aesthetics.
 - [ ] **i18n**: Add support for multiple languages.

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-07
+
+### Added
+- **Secure LLM Credential Storage**: Store LLM API keys in macOS Keychain instead of plaintext config; migrate legacy `llm_config.json` credentials on first access.
+- **Native Multi-provider LLM Support**: Configure DeepSeek, OpenAI, Anthropic, or Google Gemini through one provider selector backed by `genai`.
+- **App Icon Loading Optimization**: Cache installed app metadata and icon payloads in runtime memory only; load the first visible Rules batch first and fill remaining icons in the background.
+- **Release Note Automation**: Add GitHub Actions workflow to include the matching `CHANGELOG.md` section in GitHub Release notes and sync release notes automatically.
+
+### Changed
+- **Simplified LLM Setup**: Replace the user-editable Base URL with provider-managed endpoints while keeping API Key and Model controls.
+- **Bounded Provider Requests**: Apply a shared 60-second timeout, bounded output tokens, and JSON-mode batch responses across providers; DeepSeek classification also disables reasoning.
+- **Batch Prediction Timeout Recovery**: Split scan prediction into bounded 20-app batches with at most 2 concurrent requests; failed batches no longer produce fallback AI rules and remain gaps for a later rescan.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added
