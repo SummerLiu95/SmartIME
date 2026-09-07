@@ -3,29 +3,37 @@
 import React, { useState, useEffect } from "react";
 import { ChevronRight, CheckCircle, AlertCircle, Loader2, Eye, EyeOff, Info } from "lucide-react";
 import { motion } from "framer-motion";
-import { API, LLMConfig } from "@/lib/api";
+import { API, LLMConfig, LLMProvider } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const PROVIDERS: Array<{ value: LLMProvider; label: string; defaultModel: string }> = [
+  { value: "deepseek", label: "DeepSeek", defaultModel: "deepseek-v4-pro" },
+  { value: "openai", label: "OpenAI", defaultModel: "gpt-4o-mini" },
+  { value: "anthropic", label: "Anthropic", defaultModel: "claude-3-5-haiku-latest" },
+  { value: "gemini", label: "Google Gemini", defaultModel: "gemini-2.5-flash" },
+];
 
 export default function LLMOnboardingPage() {
   const router = useRouter();
   const [config, setConfig] = useState<LLMConfig>({
     api_key: "",
-    model: "gpt-4o-mini",
-    base_url: "https://api.openai.com/v1",
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [status, setStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [savedBaseUrl, setSavedBaseUrl] = useState("");
+  const [savedProvider, setSavedProvider] = useState<LLMProvider | null>(null);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(true);
-  const canReuseKey = hasApiKey && config.base_url.replace(/\/+$/, '') === savedBaseUrl.replace(/\/+$/, '');
+  const canReuseKey = hasApiKey && config.provider === savedProvider;
 
   useEffect(() => {
     const isPreview = !API._isTauri();
@@ -38,15 +46,13 @@ export default function LLMOnboardingPage() {
     try {
       const savedConfig = await API.getLLMConfig();
       setHasApiKey(savedConfig.has_api_key);
-      setSavedBaseUrl(savedConfig.base_url);
-      if (savedConfig.base_url) {
-          setConfig(prev => ({
-              ...prev,
-              model: savedConfig.model || prev.model,
-              base_url: savedConfig.base_url || prev.base_url,
-              api_key: API._isTauri() ? "" : "demo-key"
-          }));
-      }
+      setSavedProvider(savedConfig.provider);
+      setConfig(prev => ({
+        ...prev,
+        provider: savedConfig.provider,
+        model: savedConfig.model || prev.model,
+        api_key: API._isTauri() ? "" : "demo-key"
+      }));
     } catch (e) {
       setStatus("error");
       setErrorMsg(typeof e === "string" ? e : "读取配置失败，请重试");
@@ -132,6 +138,44 @@ export default function LLMOnboardingPage() {
         {/* Form */}
         <div className="w-full flex flex-col gap-4">
           <div className="space-y-1.5">
+            <Label htmlFor="provider" className="text-sm font-medium text-[#18181b] dark:text-[#fafafa] tracking-[-0.15px]">服务商 *</Label>
+            <Select
+              value={config.provider}
+              disabled={busy || status === "testing"}
+              onValueChange={(value: LLMProvider) => {
+                const provider = PROVIDERS.find((item) => item.value === value);
+                setConfig((current) => ({
+                  ...current,
+                  provider: value,
+                  model: provider?.defaultModel ?? current.model,
+                  api_key: value === savedProvider ? current.api_key : "",
+                }));
+                setStatus("idle");
+                setErrorMsg("");
+              }}
+            >
+              <SelectTrigger
+                id="provider"
+                className={cn(
+                  "w-full bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
+                  "h-[38px] rounded-[10px] px-[11px] py-[7px]",
+                  "text-sm text-[#18181b] dark:text-[#fafafa]",
+                  "focus-visible:ring-1 focus-visible:ring-blue-500"
+                )}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((provider) => (
+                  <SelectItem key={provider.value} value={provider.value}>
+                    {provider.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
                 <Label htmlFor="api_key" className="text-sm font-medium text-[#18181b] dark:text-[#fafafa] tracking-[-0.15px]">API Key *</Label>
                 <TooltipProvider>
@@ -140,7 +184,7 @@ export default function LLMOnboardingPage() {
                             <Info className="h-3.5 w-3.5 text-zinc-400 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent>
-                            <p>您的 OpenAI 或兼容服务的 API 密钥</p>
+                            <p>所选服务商提供的 API 密钥</p>
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
@@ -201,23 +245,6 @@ export default function LLMOnboardingPage() {
                 disabled={busy || status === "testing"}
                 onChange={(e) => { setConfig({ ...config, model: e.target.value }); setStatus("idle"); }}
                 placeholder="e.g. gpt-4o-mini"
-                className={cn(
-                    "bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
-                    "h-[38px] rounded-[10px] px-[11px] py-[7px]",
-                    "text-sm text-[#18181b] dark:text-[#fafafa] placeholder:text-[#18181b]/50 dark:placeholder:text-[#fafafa]/50",
-                    "focus-visible:ring-1 focus-visible:ring-blue-500"
-                )}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="base_url" className="text-sm font-medium text-[#18181b] dark:text-[#fafafa] tracking-[-0.15px]">Base URL</Label>
-            <Input
-                id="base_url"
-                value={config.base_url}
-                disabled={busy || status === "testing"}
-                onChange={(e) => { setConfig({ ...config, base_url: e.target.value }); setStatus("idle"); }}
-                placeholder="https://api.openai.com/v1"
                 className={cn(
                     "bg-[#fafafa] dark:bg-zinc-800/50 border-[#e4e4e7] dark:border-zinc-700",
                     "h-[38px] rounded-[10px] px-[11px] py-[7px]",

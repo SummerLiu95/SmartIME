@@ -1,18 +1,24 @@
 use crate::credentials::{self, Keychain};
 use crate::error::{AppError, Result};
 use crate::input_source::InputSource;
-use reqwest::Client;
+use genai::adapter::AdapterKind;
+use genai::chat::{ChatOptions, ChatRequest, ChatResponseFormat, ReasoningEffort};
+use genai::resolver::{AuthData, AuthResolver};
+use genai::{Client as GenAiClient, ModelIden};
+use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 #[cfg(debug_assertions)]
 use std::env;
 use std::path::PathBuf;
-use zeroize::Zeroize;
+use std::sync::Arc;
+use zeroize::{Zeroize, Zeroizing};
 
 // Serialize migration and updates even when a prediction owns a cloned client.
 static CREDENTIAL_ACCESS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const HTTP_REQUEST_TIMEOUT_SECONDS: u64 = 60;
-const DEEPSEEK_BATCH_MAX_TOKENS: u32 = 2048;
+const CONNECTION_TEST_MAX_TOKENS: u32 = 16;
+const BATCH_MAX_TOKENS: u32 = 2048;
 
 fn credential_access() -> Result<std::sync::MutexGuard<'static, ()>> {
     CREDENTIAL_ACCESS
@@ -20,12 +26,52 @@ fn credential_access() -> Result<std::sync::MutexGuard<'static, ()>> {
         .map_err(|_| AppError::Config("密钥操作暂不可用，请重新启动应用".into()))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LLMProvider {
+    #[default]
+    #[serde(rename = "deepseek")]
+    DeepSeek,
+    #[serde(rename = "openai")]
+    OpenAi,
+    Anthropic,
+    Gemini,
+}
+
+impl LLMProvider {
+    pub(crate) fn adapter_kind(self) -> AdapterKind {
+        match self {
+            Self::DeepSeek => AdapterKind::DeepSeek,
+            Self::OpenAi => AdapterKind::OpenAI,
+            Self::Anthropic => AdapterKind::Anthropic,
+            Self::Gemini => AdapterKind::Gemini,
+        }
+    }
+
+    pub(crate) fn infer_legacy(model: &str, base_url: Option<&str>) -> Self {
+        let model = model.trim().to_ascii_lowercase();
+        let base_url = base_url.unwrap_or_default().to_ascii_lowercase();
+        if model.starts_with("deepseek-") || base_url.contains("deepseek") {
+            Self::DeepSeek
+        } else if model.starts_with("claude-") || base_url.contains("anthropic") {
+            Self::Anthropic
+        } else if model.starts_with("gemini-")
+            || base_url.contains("generativelanguage.googleapis.com")
+        {
+            Self::Gemini
+        } else {
+            Self::OpenAi
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LLMConfig {
     #[serde(default)]
     pub api_key: String,
+    #[serde(default)]
+    pub provider: LLMProvider,
     pub model: String,
-    pub base_url: String,
 }
 
 impl Drop for LLMConfig {
@@ -38,42 +84,21 @@ impl Default for LLMConfig {
     fn default() -> Self {
         Self {
             api_key: "".to_string(),
-            model: "gpt-3.5-turbo".to_string(),
-            base_url: "https://api.openai.com/v1".to_string(),
+            provider: LLMProvider::DeepSeek,
+            model: "deepseek-v4-pro".to_string(),
         }
     }
 }
 
 #[derive(Serialize)]
 pub struct LLMConfigStatus {
+    pub provider: LLMProvider,
     pub model: String,
-    pub base_url: String,
     pub has_api_key: bool,
 }
 
-pub(crate) fn endpoint(base_url: &str) -> Result<reqwest::Url> {
-    let url = reqwest::Url::parse(base_url)
-        .map_err(|_| AppError::Config("请输入有效的 HTTPS 服务地址".into()))?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(AppError::Config(
-            "服务地址必须使用 HTTPS，且不能包含账号、密码、查询参数或片段".into(),
-        ));
-    }
-    reqwest::Url::parse(&format!(
-        "{}/chat/completions",
-        url.as_str().trim_end_matches('/')
-    ))
-    .map_err(|_| AppError::Config("服务地址无效".into()))
-}
-
-fn http_client() -> Result<Client> {
-    Client::builder()
+fn http_client() -> Result<HttpClient> {
+    HttpClient::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECONDS))
@@ -81,67 +106,53 @@ fn http_client() -> Result<Client> {
         .map_err(|_| AppError::Llm("无法初始化安全连接".into()))
 }
 
-fn safe_network_error(error: reqwest::Error, stage: &str) -> AppError {
-    if error.is_timeout() {
+fn safe_genai_error(error: genai::Error, stage: &str) -> AppError {
+    if let genai::Error::HttpError { status, .. } = &error {
+        return AppError::Llm(format!("请求失败（HTTP {}）", status.as_u16()));
+    }
+    if error.to_string().to_ascii_lowercase().contains("timeout") {
         return AppError::Llm(format!(
             "{stage}超时（{} 秒）",
             HTTP_REQUEST_TIMEOUT_SECONDS
         ));
     }
-    if error.is_connect() {
-        return AppError::Llm("无法连接模型服务，请检查服务地址和网络连接".into());
-    }
-    if error.is_decode() {
-        return AppError::Llm("读取模型响应失败：响应不是有效的 API JSON".into());
-    }
+    AppError::Llm(format!("{stage}失败，请检查服务商、模型名称和网络连接"))
+}
 
-    AppError::Llm(format!("{stage}失败，请检查模型服务状态"))
+fn genai_client(config: &LLMConfig) -> Result<GenAiClient> {
+    let secret = Arc::new(Zeroizing::new(config.api_key.clone()));
+    let auth_resolver = AuthResolver::from_resolver_fn(move |_model_iden: ModelIden| {
+        Ok(Some(AuthData::from_single(secret.as_str().to_owned())))
+    });
+    Ok(GenAiClient::builder()
+        .with_auth_resolver(auth_resolver)
+        .with_reqwest(http_client()?)
+        .build())
+}
+
+fn model_iden(config: &LLMConfig) -> ModelIden {
+    ModelIden::new(
+        config.provider.adapter_kind(),
+        config.model.trim().to_owned(),
+    )
+}
+
+fn chat_options(provider: LLMProvider, max_tokens: u32, json_mode: bool) -> ChatOptions {
+    let mut options = ChatOptions::default()
+        .with_temperature(0.1)
+        .with_max_tokens(max_tokens);
+    if json_mode {
+        options = options.with_response_format(ChatResponseFormat::JsonMode);
+    }
+    if provider == LLMProvider::DeepSeek {
+        options = options.with_reasoning_effort(ReasoningEffort::None);
+    }
+    options
 }
 
 #[derive(Clone)]
 pub struct LLMClient {
     file_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ChatMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    temperature: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    thinking: Option<ThinkingConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    response_format: Option<ResponseFormat>,
-}
-
-#[derive(Debug, Serialize)]
-struct ThinkingConfig {
-    #[serde(rename = "type")]
-    mode: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct ResponseFormat {
-    #[serde(rename = "type")]
-    format: &'static str,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatChoice {
-    message: ChatMessage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,14 +217,21 @@ impl LLMClient {
         }
 
         let api_key = env::var("LLM_API_KEY").ok()?;
-        let model = env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
-        let base_url =
-            env::var("LLM_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let defaults = LLMConfig::default();
+        let model = env::var("LLM_MODEL").unwrap_or_else(|_| defaults.model.clone());
+        let provider = env::var("LLM_PROVIDER")
+            .ok()
+            .and_then(|value| {
+                serde_json::from_str(&format!("\"{}\"", value.to_ascii_lowercase())).ok()
+            })
+            .unwrap_or_else(|| {
+                LLMProvider::infer_legacy(&model, env::var("LLM_BASE_URL").ok().as_deref())
+            });
 
         Some(LLMConfig {
             api_key,
+            provider,
             model,
-            base_url,
         })
     }
 
@@ -223,37 +241,17 @@ impl LLMClient {
             return Err(AppError::Llm("API Key cannot be empty".to_string()));
         }
 
-        let client = http_client()?;
-        let url = endpoint(&config.base_url)?;
-
-        let request = ChatCompletionRequest {
-            model: config.model.clone(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: "Hi".to_string(),
-            }],
-            temperature: 0.1,
-            thinking: is_deepseek_model(&config.model)
-                .then_some(ThinkingConfig { mode: "disabled" }),
-            max_tokens: is_deepseek_model(&config.model).then_some(16),
-            response_format: None,
-        };
-
-        let resp = client
-            .post(url)
-            .bearer_auth(&config.api_key)
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .map_err(|error| safe_network_error(error, "发送连接测试请求"))?;
-
-        if !resp.status().is_success() {
-            return Err(AppError::Llm(format!(
-                "连接失败（HTTP {}）",
-                resp.status().as_u16()
-            )));
+        if config.model.trim().is_empty() {
+            return Err(AppError::Config("请输入模型名称".into()));
         }
+
+        let client = genai_client(config)?;
+        let request = ChatRequest::from_user("Hi");
+        let options = chat_options(config.provider, CONNECTION_TEST_MAX_TOKENS, false);
+        client
+            .exec_chat(model_iden(config), request, Some(&options))
+            .await
+            .map_err(|error| safe_genai_error(error, "连接测试"))?;
 
         Ok(())
     }
@@ -270,56 +268,18 @@ impl LLMClient {
 
         let prompt = build_prediction_prompt(apps, input_sources, preferred_language);
 
-        let request = build_batch_prediction_request(config, prompt);
-
-        let url = endpoint(&config.base_url)?;
-        let resp = http_client()?
-            .post(url)
-            .bearer_auth(&config.api_key)
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
+        let client = genai_client(config)?;
+        let request = ChatRequest::from_user(prompt);
+        let options = chat_options(config.provider, BATCH_MAX_TOKENS, true);
+        let completion = client
+            .exec_chat(model_iden(config), request, Some(&options))
             .await
-            .map_err(|error| safe_network_error(error, "等待模型响应"))?;
-
-        if !resp.status().is_success() {
-            return Err(AppError::Llm(format!(
-                "请求失败（HTTP {}）",
-                resp.status().as_u16()
-            )));
-        }
-
-        let completion: ChatCompletionResponse = resp
-            .json()
-            .await
-            .map_err(|error| safe_network_error(error, "读取模型响应"))?;
-        let Some(choice) = completion.choices.first() else {
+            .map_err(|error| safe_genai_error(error, "等待模型响应"))?;
+        let Some(content) = completion.first_text() else {
             return Err(AppError::Llm("No response from AI".to_string()));
         };
 
-        parse_batch_prediction_response(&choice.message.content, apps, input_sources)
-    }
-}
-
-fn is_deepseek_model(model: &str) -> bool {
-    model.trim().to_ascii_lowercase().starts_with("deepseek-")
-}
-
-fn build_batch_prediction_request(config: &LLMConfig, prompt: String) -> ChatCompletionRequest {
-    let is_deepseek = is_deepseek_model(&config.model);
-
-    ChatCompletionRequest {
-        model: config.model.clone(),
-        messages: vec![ChatMessage {
-            role: "user".to_string(),
-            content: prompt,
-        }],
-        temperature: 0.1,
-        thinking: is_deepseek.then_some(ThinkingConfig { mode: "disabled" }),
-        max_tokens: is_deepseek.then_some(DEEPSEEK_BATCH_MAX_TOKENS),
-        response_format: is_deepseek.then_some(ResponseFormat {
-            format: "json_object",
-        }),
+        parse_batch_prediction_response(content, apps, input_sources)
     }
 }
 
@@ -488,20 +448,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn endpoints_reject_cleartext_and_embedded_secrets() {
-        for url in [
-            "http://example.com/v1",
-            "http://127.0.0.1:8080",
-            "https://user:pass@example.com",
-            "https://example.com?key=secret",
-            "https://example.com/#secret",
-            "file:///tmp/key",
-        ] {
-            assert!(endpoint(url).is_err(), "accepted {url}");
-        }
+    fn explicit_provider_selects_native_genai_adapter() {
         assert_eq!(
-            endpoint("https://example.com/v1/").unwrap().as_str(),
-            "https://example.com/v1/chat/completions"
+            LLMProvider::DeepSeek.adapter_kind(),
+            genai::adapter::AdapterKind::DeepSeek
+        );
+        assert_eq!(
+            LLMProvider::OpenAi.adapter_kind(),
+            genai::adapter::AdapterKind::OpenAI
+        );
+        assert_eq!(
+            LLMProvider::Anthropic.adapter_kind(),
+            genai::adapter::AdapterKind::Anthropic
+        );
+        assert_eq!(
+            LLMProvider::Gemini.adapter_kind(),
+            genai::adapter::AdapterKind::Gemini
+        );
+    }
+
+    #[test]
+    fn legacy_provider_is_inferred_from_model_or_service_address() {
+        assert_eq!(
+            LLMProvider::infer_legacy("deepseek-v4-pro", Some("https://api.deepseek.com")),
+            LLMProvider::DeepSeek
+        );
+        assert_eq!(
+            LLMProvider::infer_legacy("claude-3-5-haiku-latest", None),
+            LLMProvider::Anthropic
+        );
+        assert_eq!(
+            LLMProvider::infer_legacy("gemini-2.5-flash", None),
+            LLMProvider::Gemini
         );
     }
 
@@ -610,34 +588,19 @@ mod tests {
     }
 
     #[test]
-    fn deepseek_batch_request_disables_thinking_and_requires_json() {
-        let config = LLMConfig {
-            api_key: "test-key".to_string(),
-            model: "deepseek-v4-pro".to_string(),
-            base_url: "https://api.deepseek.com".to_string(),
-        };
-
-        let request = build_batch_prediction_request(&config, "predict these apps".to_string());
-        let payload = serde_json::to_value(request).expect("serialize request");
-
-        assert_eq!(payload["thinking"]["type"], "disabled");
-        assert_eq!(payload["response_format"]["type"], "json_object");
-        assert_eq!(payload["max_tokens"], 2048);
-    }
-
-    #[test]
-    fn generic_provider_request_omits_deepseek_specific_controls() {
-        let config = LLMConfig {
-            api_key: "test-key".to_string(),
-            model: "custom-chat-model".to_string(),
-            base_url: "https://llm.example.com/v1".to_string(),
-        };
-
-        let request = build_batch_prediction_request(&config, "predict these apps".to_string());
-        let payload = serde_json::to_value(request).expect("serialize request");
-
-        assert!(payload.get("thinking").is_none());
-        assert!(payload.get("response_format").is_none());
-        assert!(payload.get("max_tokens").is_none());
+    fn batch_options_are_bounded_and_request_json_for_every_provider() {
+        for provider in [
+            LLMProvider::DeepSeek,
+            LLMProvider::OpenAi,
+            LLMProvider::Anthropic,
+            LLMProvider::Gemini,
+        ] {
+            let options = chat_options(provider, BATCH_MAX_TOKENS, true);
+            assert_eq!(options.max_tokens, Some(BATCH_MAX_TOKENS));
+            assert!(matches!(
+                options.response_format,
+                Some(ChatResponseFormat::JsonMode)
+            ));
+        }
     }
 }

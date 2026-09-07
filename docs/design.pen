@@ -391,6 +391,75 @@
                       "children": [
                         {
                           "type": "frame",
+                          "id": "Dvke3",
+                          "name": "服务商 * 字段",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "IwCmq",
+                              "name": "服务商 * 标签行",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "hdM6j",
+                                  "name": "服务商 * 标签",
+                                  "fill": "$text",
+                                  "content": "服务商 *",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "WACtl",
+                              "name": "服务商 * 选择框",
+                              "width": "fill_container",
+                              "height": 38,
+                              "fill": "$surface",
+                              "cornerRadius": 10,
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                12
+                              ],
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "d3YtQa",
+                                  "name": "服务商 * 值",
+                                  "fill": "#18181B80",
+                                  "content": "DeepSeek",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "icon",
+                                  "id": "fBUS9",
+                                  "name": "服务商下拉箭头",
+                                  "width": 16,
+                                  "height": 16,
+                                  "icon": "chevron-down",
+                                  "library": "lucide",
+                                  "fill": "$muted"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
                           "id": "a5Q0KJ",
                           "name": "API Key * 字段",
                           "width": "fill_container",
@@ -518,66 +587,7 @@
                                   "id": "JhEk4",
                                   "name": "Model * 值",
                                   "fill": "#18181B80",
-                                  "content": "GPT-4o",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Dvke3",
-                          "name": "Base URL 字段",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 6,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "IwCmq",
-                              "name": "Base URL 标签行",
-                              "width": "fill_container",
-                              "justifyContent": "space_between",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "hdM6j",
-                                  "name": "Base URL 标签",
-                                  "fill": "$text",
-                                  "content": "Base URL",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "500"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "WACtl",
-                              "name": "Base URL 输入框",
-                              "width": "fill_container",
-                              "height": 38,
-                              "fill": "$surface",
-                              "cornerRadius": 10,
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "padding": [
-                                8,
-                                12
-                              ],
-                              "justifyContent": "space_between",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "d3YtQa",
-                                  "name": "Base URL 值",
-                                  "fill": "#18181B80",
-                                  "content": "https://api.openai.com/v1",
+                                  "content": "deepseek-v4-pro",
                                   "fontFamily": "Inter",
                                   "fontSize": 14,
                                   "fontWeight": "normal"
@@ -4065,6 +4075,75 @@
           "children": [
             {
               "type": "frame",
+              "id": "WOJ7z",
+              "name": "服务商 * 字段",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "m4I0m",
+                  "name": "服务商 * 标签行",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "hraVt",
+                      "name": "服务商 * 标签",
+                      "fill": "$text",
+                      "content": "服务商 *",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "500"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "I0eI6j",
+                  "name": "服务商 * 选择框",
+                  "width": "fill_container",
+                  "height": 38,
+                  "fill": "$surface",
+                  "cornerRadius": 10,
+                  "stroke": "$border",
+                  "strokeWidth": 1,
+                  "padding": [
+                    8,
+                    12
+                  ],
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Y2z6C",
+                      "name": "服务商 * 值",
+                      "fill": "#18181B80",
+                      "content": "DeepSeek",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "f124dg",
+                      "name": "服务商下拉箭头",
+                      "width": 16,
+                      "height": 16,
+                      "icon": "chevron-down",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
               "id": "UJlND",
               "name": "API Key * 字段",
               "width": "fill_container",
@@ -4192,66 +4271,7 @@
                       "id": "t2Uqi",
                       "name": "Model * 值",
                       "fill": "#18181B80",
-                      "content": "GPT-4o",
-                      "fontFamily": "Inter",
-                      "fontSize": 14,
-                      "fontWeight": "normal"
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "WOJ7z",
-              "name": "Base URL 字段",
-              "width": "fill_container",
-              "layout": "vertical",
-              "gap": 6,
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "m4I0m",
-                  "name": "Base URL 标签行",
-                  "width": "fill_container",
-                  "justifyContent": "space_between",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "hraVt",
-                      "name": "Base URL 标签",
-                      "fill": "$text",
-                      "content": "Base URL",
-                      "fontFamily": "Inter",
-                      "fontSize": 14,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "I0eI6j",
-                  "name": "Base URL 输入框",
-                  "width": "fill_container",
-                  "height": 38,
-                  "fill": "$surface",
-                  "cornerRadius": 10,
-                  "stroke": "$border",
-                  "strokeWidth": 1,
-                  "padding": [
-                    8,
-                    12
-                  ],
-                  "justifyContent": "space_between",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "Y2z6C",
-                      "name": "Base URL 值",
-                      "fill": "#18181B80",
-                      "content": "https://api.openai.com/v1",
+                      "content": "deepseek-v4-pro",
                       "fontFamily": "Inter",
                       "fontSize": 14,
                       "fontWeight": "normal"
@@ -8746,7 +8766,7 @@
                           "id": "AxdZd",
                           "name": "LLM 标题",
                           "fill": "$text",
-                          "content": "选择模型",
+                          "content": "LLM 设置",
                           "fontFamily": "Inter",
                           "fontSize": 24,
                           "fontWeight": "600"
@@ -8758,7 +8778,7 @@
                           "fill": "$muted",
                           "textGrowth": "fixed-width",
                           "width": "fill_container",
-                          "content": "选择适合你的 AI 模型。",
+                          "content": "选择服务商并配置 AI 模型。",
                           "textAlign": "center",
                           "fontFamily": "Inter",
                           "fontSize": 14,
@@ -8774,6 +8794,75 @@
                       "layout": "vertical",
                       "gap": 16,
                       "children": [
+                        {
+                          "type": "frame",
+                          "id": "ju1wB",
+                          "name": "服务商 * 字段",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "fNbMJ",
+                              "name": "服务商 * 标签行",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "aO6v6",
+                                  "name": "服务商 * 标签",
+                                  "fill": "$text",
+                                  "content": "服务商 *",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "SMYdc",
+                              "name": "服务商 * 选择框",
+                              "width": "fill_container",
+                              "height": 38,
+                              "fill": "$surface",
+                              "cornerRadius": 10,
+                              "stroke": "$border",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                12
+                              ],
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "eEZDa",
+                                  "name": "服务商 * 值",
+                                  "fill": "#18181B80",
+                                  "content": "DeepSeek",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "icon",
+                                  "id": "u30HB",
+                                  "name": "服务商下拉箭头",
+                                  "width": 16,
+                                  "height": 16,
+                                  "icon": "chevron-down",
+                                  "library": "lucide",
+                                  "fill": "$muted"
+                                }
+                              ]
+                            }
+                          ]
+                        },
                         {
                           "type": "frame",
                           "id": "KIW1z",
@@ -8874,7 +8963,7 @@
                                   "id": "BULEe",
                                   "name": "Model * 标签",
                                   "fill": "$text",
-                                  "content": "选择模型 *",
+                                  "content": "Model *",
                                   "fontFamily": "Inter",
                                   "fontSize": 14,
                                   "fontWeight": "500"
@@ -8903,66 +8992,7 @@
                                   "id": "k6lZWO",
                                   "name": "Model * 值",
                                   "fill": "#18181B80",
-                                  "content": "gpt-4o-mini",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "ju1wB",
-                          "name": "Base URL 字段",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 6,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "fNbMJ",
-                              "name": "Base URL 标签行",
-                              "width": "fill_container",
-                              "justifyContent": "space_between",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "aO6v6",
-                                  "name": "Base URL 标签",
-                                  "fill": "$text",
-                                  "content": "Base URL",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "500"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "SMYdc",
-                              "name": "Base URL 输入框",
-                              "width": "fill_container",
-                              "height": 38,
-                              "fill": "$surface",
-                              "cornerRadius": 10,
-                              "stroke": "$border",
-                              "strokeWidth": 1,
-                              "padding": [
-                                8,
-                                12
-                              ],
-                              "justifyContent": "space_between",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "eEZDa",
-                                  "name": "Base URL 值",
-                                  "fill": "#18181B80",
-                                  "content": "https://api.openai.com/v1",
+                                  "content": "deepseek-v4-pro",
                                   "fontFamily": "Inter",
                                   "fontSize": 14,
                                   "fontWeight": "normal"

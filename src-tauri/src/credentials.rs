@@ -1,6 +1,6 @@
 //! Credential persistence: secret-free metadata and verified Keychain writes.
 use crate::error::{AppError, Result};
-use crate::llm::{LLMConfig, LLMConfigStatus};
+use crate::llm::{LLMConfig, LLMConfigStatus, LLMProvider};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -65,7 +65,10 @@ impl SecretStore for Keychain {
 #[derive(Serialize, Deserialize)]
 struct StoredConfig {
     model: String,
-    base_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<LLMProvider>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_url: Option<String>,
     #[serde(default)]
     credential_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -77,8 +80,18 @@ struct StoredConfig {
 
 #[derive(Serialize, Deserialize)]
 struct Credential {
-    base_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<LLMProvider>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_url: Option<String>,
     api_key: String,
+}
+
+impl StoredConfig {
+    fn resolved_provider(&self) -> LLMProvider {
+        self.provider
+            .unwrap_or_else(|| LLMProvider::infer_legacy(&self.model, self.base_url.as_deref()))
+    }
 }
 
 impl Drop for Credential {
@@ -97,9 +110,17 @@ fn read_key(config: &StoredConfig, store: &impl SecretStore) -> Result<Option<Ze
     };
     let mut credential: Credential =
         serde_json::from_str(&payload).map_err(|_| keychain_error())?;
-    if credential.base_url != config.base_url.trim_end_matches('/') {
+    let provider_matches = match (credential.provider, credential.base_url.as_deref()) {
+        (Some(provider), _) => provider == config.resolved_provider(),
+        (None, Some(base_url)) => config
+            .base_url
+            .as_deref()
+            .is_some_and(|saved| base_url == saved.trim_end_matches('/')),
+        (None, None) => false,
+    };
+    if !provider_matches {
         return Err(AppError::Config(
-            "服务地址与已保存密钥不匹配，请重新配置密钥".into(),
+            "服务商与已保存密钥不匹配，请重新配置密钥".into(),
         ));
     }
     Ok(Some(Zeroizing::new(std::mem::take(
@@ -122,7 +143,8 @@ fn read(path: &Path) -> Result<StoredConfig> {
             let defaults = LLMConfig::default();
             Ok(StoredConfig {
                 model: defaults.model.clone(),
-                base_url: defaults.base_url.clone(),
+                provider: Some(defaults.provider),
+                base_url: None,
                 credential_id: None,
                 retired_credentials: Vec::new(),
                 api_key: String::new(),
@@ -165,9 +187,11 @@ fn replace_secret(
     key: &str,
 ) -> Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
-    // Bind the destination inside Keychain too: editing public JSON cannot reroute the key.
+    let provider = config.resolved_provider();
+    // Bind the provider inside Keychain too: editing public JSON cannot reroute the key.
     let payload = Zeroizing::new(serde_json::to_string(&Credential {
-        base_url: config.base_url.trim_end_matches('/').into(),
+        provider: Some(provider),
+        base_url: None,
         api_key: key.into(),
     })?);
     store.set(&id, &payload)?;
@@ -184,11 +208,15 @@ fn replace_secret(
     }
     let previous = config.credential_id.replace(id.clone());
     let retired_count = config.retired_credentials.len();
+    let previous_provider = config.provider.replace(provider);
+    let previous_base_url = config.base_url.take();
     if let Some(previous) = &previous {
         config.retired_credentials.push(previous.clone());
     }
     if let Err(error) = write(path, config) {
         config.credential_id = previous;
+        config.provider = previous_provider;
+        config.base_url = previous_base_url;
         config.retired_credentials.truncate(retired_count);
         let _ = store.delete(&id);
         return Err(error);
@@ -227,8 +255,8 @@ pub fn status(path: &Path, store: &impl SecretStore) -> Result<LLMConfigStatus> 
     let config = load(path, store)?;
     let has_api_key = read_key(&config, store)?.is_some();
     Ok(LLMConfigStatus {
+        provider: config.resolved_provider(),
         model: config.model.clone(),
-        base_url: config.base_url.clone(),
         has_api_key,
     })
 }
@@ -241,17 +269,16 @@ pub fn resolve(
     let config = load(path, store)?;
     let mut input = input.unwrap_or_else(|| LLMConfig {
         api_key: String::new(),
+        provider: config.resolved_provider(),
         model: config.model.clone(),
-        base_url: config.base_url.clone(),
     });
-    crate::llm::endpoint(&input.base_url)?;
     if input.model.trim().is_empty() {
         return Err(AppError::Config("请输入模型名称".into()));
     }
     if input.api_key.trim().is_empty() {
-        if input.base_url.trim_end_matches('/') != config.base_url.trim_end_matches('/') {
+        if input.provider != config.resolved_provider() {
             return Err(AppError::Config(
-                "更换服务地址时请重新输入对应的 API Key".into(),
+                "更换服务商时请重新输入对应的 API Key".into(),
             ));
         }
         input.api_key = read_key(&config, store)?
@@ -268,7 +295,8 @@ pub fn save(path: &Path, store: &impl SecretStore, input: LLMConfig) -> Result<(
     let input = resolve(path, store, Some(input))?;
     let mut config = load(path, store)?;
     config.model = input.model.clone();
-    config.base_url = input.base_url.clone();
+    config.provider = Some(input.provider);
+    config.base_url = None;
     replace_secret(path, store, &mut config, &input.api_key)
 }
 
@@ -372,8 +400,8 @@ mod tests {
         status(&path, &store).unwrap();
         let input = LLMConfig {
             api_key: String::new(),
+            provider: LLMProvider::DeepSeek,
             model: "test".into(),
-            base_url: "https://other.example/v1".into(),
         };
         assert!(resolve(&path, &store, Some(input)).is_err());
         delete(&path, &store).unwrap();
@@ -433,8 +461,8 @@ mod tests {
             &store,
             LLMConfig {
                 api_key: "new-secret".into(),
+                provider: LLMProvider::DeepSeek,
                 model: "test".into(),
-                base_url: "https://new.example/v1".into(),
             },
         )
         .unwrap();
@@ -442,7 +470,7 @@ mod tests {
         assert_eq!(resolve(&path, &store, None).unwrap().api_key, "new-secret");
         let disk = fs::read_to_string(&path).unwrap();
         assert!(!disk.contains("new-secret"));
-        let tampered = disk.replace("https://new.example/v1", "https://attacker.example/v1");
+        let tampered = disk.replace("\"deepseek\"", "\"openai\"");
         fs::write(&path, tampered).unwrap();
         assert!(resolve(&path, &store, None).is_err());
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
@@ -459,8 +487,8 @@ mod tests {
             &store,
             LLMConfig {
                 api_key: "replacement".into(),
+                provider: LLMProvider::OpenAi,
                 model: "test".into(),
-                base_url: "https://example.com/v1".into()
             }
         )
         .is_err());

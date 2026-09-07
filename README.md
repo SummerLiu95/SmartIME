@@ -50,7 +50,7 @@ open /Applications/SmartIME.app
 Then continue setup:
 
 1. Complete Accessibility permission authorization in onboarding.
-2. Configure LLM settings (`API Key`, `Model`, `Base URL`) and run connection test.
+2. Select an LLM provider, configure its `API Key` and `Model`, then run the connection test.
 3. Start first scan to generate initial rules.
 
 ## Development Setup
@@ -69,9 +69,9 @@ bun install
 
 ### Configure LLM credentials
 
-Use the app's LLM settings to save credentials in macOS Keychain. Base URLs must use HTTPS. Existing plaintext `llm_config.json` credentials migrate on first credential access; allow SmartIME's Keychain prompt if macOS requests it. Migration failure leaves the old file intact and reports an error.
+Use the app's LLM settings to choose DeepSeek, OpenAI, Anthropic, or Google Gemini and save its credential in macOS Keychain. SmartIME uses each provider's official endpoint and native protocol through `genai`; custom service addresses are not exposed in this version. Existing plaintext or Base-URL-based `llm_config.json` credentials migrate on first credential access; allow SmartIME's Keychain prompt if macOS requests it. Migration failure leaves the old file intact and reports an error.
 
-For development only, a debug build with no LLM config file can import `.env.llm` (copy `.env.llm.example`) or `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` environment variables into Keychain once. Release builds do not read this source. Remove the development plaintext key after successful import; the app does not edit your environment files. Existing config and Keychain errors never fall back to environment credentials.
+For development only, a debug build with no LLM config file can import `.env.llm` (copy `.env.llm.example`) or `LLM_API_KEY`, `LLM_PROVIDER`, and `LLM_MODEL` environment variables into Keychain once. Release builds do not read this source. Remove the development plaintext key after successful import; the app does not edit your environment files. Existing config and Keychain errors never fall back to environment credentials.
 
 Browser previews use a virtual key and simulated connection test; do not enter real credentials there.
 

@@ -134,20 +134,21 @@ SmartIME does not implement a custom current input method indicator. macOS alrea
 *   **FR-LLM LLM Configuration (New)**:
     *   On first application launch, forcibly require user to configure LLM API information.
     *   Fields included:
+        *   **Provider** (Required; DeepSeek, OpenAI, Anthropic, or Google Gemini)
         *   **API Key** (Required, masked display)
-        *   **Model** (Required, text input, default recommendation GPT-4o, etc.)
-        *   **Base URL** (Optional, defaults to `https://api.openai.com/v1`)
+        *   **Model** (Required, text input; default follows the selected provider)
+    *   Provider endpoints and request protocols are managed by the application. Custom service addresses and advanced request settings are not exposed in this version.
     *   Must provide "Test Connection" function, allowing continuation only after valid configuration verification.
 *   **FR-02 AI Intelligent Prediction**:
     *   **Precondition**: Must complete LLM API configuration first.
     *   **Input Constraint**: Prediction results must strictly be based on the user's currently installed/enabled input method list on the system, and must not fabricate non-existent input method IDs.
     *   **Rule Source**: Completely rely on LLM for intelligent inference, system does not build in any static whitelist or predefined rules.
     *   Call LLM API to predict input method preference based on application name/category.
-    *   Prediction should minimize network round trips by supporting batch prediction for multiple apps in one request when the configured provider supports OpenAI-compatible chat completions.
+    *   Prediction should use a shared multi-provider client with the provider's native protocol and minimize network round trips through batch prediction.
     *   Large prediction sets must be split into batches of at most 20 apps with at most 2 requests in flight, so one slow provider response cannot invalidate the complete scan.
     *   Batch prediction output must be validated per app: unknown bundle IDs, missing apps, malformed responses, and input source IDs not present in the current system list must not be persisted as valid rules.
     *   Failed, missing, or invalid predictions must remain without a rule and must never be persisted as `is_ai_generated: true` through a deterministic input-source fallback. A failed batch must not be retried automatically during the same scan; a later user-triggered rescan should request those missing rules again.
-    *   DeepSeek batch prediction must use non-thinking mode, request JSON output, and cap output tokens so simple rule classification does not exhaust the 60-second request timeout through unnecessary reasoning.
+    *   Every provider request must use a 60-second timeout and bounded output tokens; batch prediction requests must request JSON output. DeepSeek additionally uses non-thinking mode so simple classification does not exhaust the timeout through unnecessary reasoning.
 *   **FR-03 Automatic Switching**:
     *   Real-time monitoring of macOS `NSWorkspace` active application change notifications.
     *   Complete input method switching call within 100ms based on the configuration table.

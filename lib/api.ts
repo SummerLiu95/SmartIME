@@ -36,10 +36,12 @@ export type AppConfig = {
   rules: AppRule[];
 };
 
+export type LLMProvider = "deepseek" | "openai" | "anthropic" | "gemini";
+
 export type LLMConfig = {
   api_key: string;
+  provider: LLMProvider;
   model: string;
-  base_url: string;
 };
 
 export type LLMConfigStatus = Omit<LLMConfig, 'api_key'> & { has_api_key: boolean };
@@ -128,8 +130,8 @@ export const API = {
     ] as InputSource[],
     llm: {
       api_key: "",
-      model: "gpt-4o-mini",
-      base_url: "https://api.openai.com/v1",
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
     } as LLMConfig,
     rescanning: false,
   },
@@ -312,7 +314,7 @@ export const API = {
    */
   getLLMConfig: async (): Promise<LLMConfigStatus> => {
     if (!API._isTauri()) {
-      return { model: API._mock.llm.model, base_url: API._mock.llm.base_url, has_api_key: false };
+      return { provider: API._mock.llm.provider, model: API._mock.llm.model, has_api_key: false };
     }
     return API._invoke('cmd_get_llm_config');
   },
@@ -322,7 +324,7 @@ export const API = {
    */
   saveLLMConfig: async (config: LLMConfig): Promise<void> => {
     if (!API._isTauri()) {
-      API._mock.llm = { model: config.model, base_url: config.base_url, api_key: '' };
+      API._mock.llm = { provider: config.provider, model: config.model, api_key: '' };
       return;
     }
     return API._invoke('cmd_save_llm_config', { config });

@@ -16,9 +16,10 @@ Follow **Shadcn/ui** design aesthetics: **Clean, Modern, Distraction-free**.
 *   **Step 1: Permission Grant**: Guide user to enable accessibility permissions.
 *   **Step 2: LLM Settings (New)**:
     *   **Form**:
-        *   `API Key *`: Password input box (with show/hide toggle), Info Icon on the right. Saved keys are never filled back in; show a saved-state placeholder, allow blank input to reuse the key at the same service address, and provide a delete-key action. A changed service address requires entering its key.
-        *   `Model *`: Text input box (Input), default placeholder "gpt-4o".
-        *   `Base URL`: Text input box, default placeholder "https://api.openai.com/v1".
+        *   `服务商 *`: Select control with DeepSeek, OpenAI, Anthropic, and Google Gemini. It appears before the credential fields and updates the recommended model value.
+        *   `API Key *`: Password input box (with show/hide toggle), Info Icon on the right. Saved keys are never filled back in; show a saved-state placeholder, allow blank input to reuse the key for the same provider, and provide a delete-key action. Changing providers requires entering the new provider's key.
+        *   `Model *`: Text input box (Input), initialized from the selected provider's recommendation and still editable.
+        *   Do not expose Base URL, custom service, or advanced request controls in this version.
     *   **Action**: "Test Connection" (loading feedback) -> "Save and Continue" after success. Disable edits during pending actions; show recoverable migration/save/delete errors. Browser preview clearly labels simulated tests and disables the virtual-key field.
 *   **Step 3: Scan & Generate**: Progress display should reflect real phases such as app discovery, input source loading, AI rule generation, and saving. During AI generation, show the settled app count such as `20/79` as bounded batches complete. Avoid a fixed fake percentage that can appear stuck while waiting for long-running LLM work. Very fast phases may use a short minimum display duration so users can perceive the transition without delaying long-running work.
 

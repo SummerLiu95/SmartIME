@@ -16,7 +16,8 @@ This project is initialized based on **`nomandhoni-cs/tauri-nextjs-shadcn-boiler
 *   **Icon Library**: [lucide-react](https://lucide.dev/) (For a consistent and aesthetic SVG icon system)
 *   **Utility Library**: `cn()` (Class merger based on `clsx` and `tailwind-merge`)
 *   **Animation Library**: [framer-motion](https://www.framer.com/motion/) (For declarative animations and complex interactions)
-*   **HTTP Client**: [reqwest](https://docs.rs/reqwest/latest/reqwest/) (Rust side, for LLM API calls)
+*   **LLM Client**: [genai](https://docs.rs/genai/latest/genai/) (Rust-side native protocol adapter for DeepSeek, OpenAI, Anthropic, and Gemini)
+*   **HTTP Client**: [reqwest](https://docs.rs/reqwest/latest/reqwest/) (injected into `genai` with HTTPS-only, no-redirect, and timeout policy)
 *   **Package Manager**: bun
 
 ### 2.2 Architectural Constraints
@@ -111,8 +112,8 @@ SmartIME/
 | `main.rs` | Tauri app bootstrap, global state registration, command binding, startup integration, close/reopen lifecycle. | `tauri`, `tauri-plugin-log`, `tauri-plugin-store` |
 | `command.rs` | IPC command layer for input sources, config, LLM operations, scanning, rescan lifecycle, and permissions. | `tauri::command`, `AppState` |
 | `config.rs` | Core config data models and JSON persistence (`config.json`) plus in-memory rule cache (`HashMap`) and planned runtime-only app metadata/icon caches used to accelerate Rules rendering. | `serde`, `serde_json`, `dirs`, `std::fs`, `std::collections` |
-| `llm.rs` | HTTPS-only requests, secret-free runtime client, serialized credential access, debug-only environment import, and prediction parsing. | `reqwest`, `dotenvy`, `zeroize` |
-| `credentials.rs` | Keychain storage, destination binding, verified legacy migration, atomic metadata writes, key replacement/deletion and retryable retired-key cleanup. | `security-framework`, `serde`, `uuid`, `zeroize` |
+| `llm.rs` | Provider-to-native-adapter mapping, bounded `genai` chat requests, secret-free runtime client, serialized credential access, debug-only environment import, and prediction parsing. | `genai`, `reqwest`, `dotenvy`, `zeroize` |
+| `credentials.rs` | Keychain storage, provider binding, verified legacy Base URL migration, atomic metadata writes, key replacement/deletion and retryable retired-key cleanup. | `security-framework`, `serde`, `uuid`, `zeroize` |
 | `input_source.rs` | macOS input source discovery/filtering, system-localized display-name resolution, current input-source query, and switching (`TISSelectInputSource`). | `core-foundation`, Carbon FFI, AppKit `NSTextInputContext`, `defaults export` parsing |
 | `system_apps.rs` | App bundle scanning in user, system, and CoreServices app locations; localized app display-name resolution; Info.plist parsing and de-dup by bundle ID. | `walkdir`, `plist`, `NSFileManager` |
 | `app_icon.rs` | Runtime macOS app icon lookup from installed bundle paths and PNG data URL conversion for Rules UI display. | `NSWorkspace`, `NSImage`, `NSBitmapImageRep` |
@@ -149,10 +150,10 @@ SmartIME/
     *   `dirs::config_dir()/smartime/config.json` stores `AppConfig` (rules + general settings + global switch).
     *   `ConfigManager` keeps in-memory cache (`rule_map`) for fast bundle-ID lookup.
 2.  **LLM persistence**
-    *   `dirs::config_dir()/smartime/llm_config.json` stores only `model`, `base_url`, `credential_id`, and optional `retired_credentials` cleanup references; writes use a new 0600 temporary file, sync and atomic rename. Missing user directory is an error, never a current-directory fallback.
-    *   macOS Keychain service `com.smartime.app.llm` stores a random-ID credential containing the API Key and its bound Base URL. Public metadata edits cannot reroute an existing key. A replacement is written and read-verified before committing metadata; retired keys are deleted afterward, with references retained for cleanup retries.
+    *   `dirs::config_dir()/smartime/llm_config.json` stores only `provider`, `model`, `credential_id`, and optional `retired_credentials` cleanup references; writes use a new 0600 temporary file, sync and atomic rename. Missing user directory is an error, never a current-directory fallback. A legacy `base_url` field is read only for migration and removed on the next successful credential save.
+    *   macOS Keychain service `com.smartime.app.llm` stores a random-ID credential containing the API Key and its bound provider. Public metadata edits cannot reroute an existing key. Legacy Base-URL-bound credentials remain readable until replaced. A replacement is written and read-verified before committing metadata; retired keys are deleted afterward, with references retained for cleanup retries.
     *   First credential access migrates legacy `api_key` JSON: Keychain write/read verification must succeed before the plaintext field is removed. Failure preserves the original file and returns an error; corrupt JSON never triggers fallback. No plaintext backup is created.
-    *   `LLMClient` retains only the config path. Requests resolve secrets on blocking workers, then release/zeroize owned key buffers; HTTP uses HTTPS only, disables redirects, and returns safe status/error messages without provider response bodies. A shared lock serializes credential operations, including prediction snapshots.
+    *   `LLMClient` retains only the config path. Requests resolve secrets on blocking workers, then release/zeroize owned key buffers. A short-lived `genai` client receives a restricted `reqwest` client that uses HTTPS only, disables redirects, and enforces a 60-second timeout. Safe status/error messages never expose provider response bodies. A shared lock serializes credential operations, including prediction snapshots.
     *   Browser preview clears legacy `smartime_llm`, uses a disabled virtual-key field, and never persists real credentials. Production CSP permits bundled scripts and native IPC, with development-only script/HMR allowances.
 3.  **Global runtime state (`AppState`)**
     *   `config: Mutex<ConfigManager>`
@@ -183,7 +184,8 @@ SmartIME/
 2.  **LLM environment file convention**
     *   Debug-only import file: `.env.llm` (not read in release builds)
     *   Template: `.env.llm.example`
-    *   Keys: `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`
+    *   Keys: `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`
+    *   Legacy `LLM_BASE_URL` is accepted only to infer a provider when `LLM_PROVIDER` is absent.
 3.  **Source of truth priority**
     *   Existing metadata/legacy file is authoritative. Only debug builds with no file may import `.env.llm` / process environment once into Keychain; otherwise use empty defaults. Keychain and parse errors never trigger environment fallback. Deletion retains empty metadata to prevent re-import.
 
@@ -204,8 +206,8 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
 | `cmd_has_config` | None | `Result<bool, AppError>` | Whether `config.json` exists. |
 | `cmd_save_config` | `config: AppConfig` | `Result<(), AppError>` | Save full config; apply general settings delta when changed. |
 | `cmd_save_rules` | `rules: Vec<AppRule>` | `Result<(), AppError>` | Save only rules without overriding other config fields. |
-| `cmd_get_llm_config` | None | `Result<LLMConfigStatus, AppError>` | Return model, base_url, has_api_key; never return a secret or placeholder. |
-| `cmd_save_llm_config` | `config: LLMConfig` | `Result<(), AppError>` | Save metadata and verified Keychain credential; empty api_key reuses the existing key only for the same Base URL. |
+| `cmd_get_llm_config` | None | `Result<LLMConfigStatus, AppError>` | Return provider, model, and has_api_key; never return a secret, service endpoint, or placeholder. |
+| `cmd_save_llm_config` | `config: LLMConfig` | `Result<(), AppError>` | Save metadata and verified Keychain credential; empty api_key reuses the existing key only for the same provider. |
 | `cmd_delete_llm_key` | None | `Result<(), AppError>` | Delete Keychain credential and clear its reference; no environment re-import on next launch. |
 | `cmd_check_llm_connection` | `config: LLMConfig` | `Result<bool, AppError>` | Validate LLM endpoint/auth by test request. |
 | `cmd_scan_and_predict` | `input_sources: Vec<InputSource>` | `Result<Vec<AppRule>, AppError>` | Discover target apps and generate initial rules, preferring batch LLM prediction and validating every returned rule against the provided input source list. |
@@ -238,7 +240,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Optional manual fallback can call `cmd_open_system_settings`.
 
 3.  **LLM onboarding**
-    *   Read existing config via `cmd_get_llm_config` (has_api_key only). Leave key blank to reuse it at the same Base URL; a changed URL requires a new key. Expose replacement/deletion and recoverable storage errors. Credential IPC runs Keychain/file work via spawn_blocking.
+    *   Read existing config via `cmd_get_llm_config` (has_api_key only). Leave key blank to reuse it for the same provider; changing provider requires a new key. Expose replacement/deletion and recoverable storage errors. Credential IPC runs Keychain/file work via spawn_blocking.
     *   Validate with `cmd_check_llm_connection`.
     *   Persist via `cmd_save_llm_config` and continue to scan step.
 
@@ -247,7 +249,7 @@ SmartIME uses Tauri's **IPC (Inter-Process Communication)** mechanism.
     *   Call `cmd_scan_and_predict(input_sources)`.
     *   Backend discovers target apps, splits prediction into batches of at most 20 apps, and runs at most 2 LLM requests concurrently.
     *   Each batch is parsed and validated independently. Successful partial results are retained; failed, missing, or invalid results do not create fallback rules, are not retried during the same scan, and remain eligible for a later user-triggered rescan.
-    *   DeepSeek chat-completion batches explicitly disable thinking, request `json_object` output, and cap output at 2048 tokens. Other OpenAI-compatible providers retain the generic payload without DeepSeek-specific fields.
+    *   `genai` maps the selected provider to its native protocol. All connection tests cap output at 16 tokens; all prediction batches cap output at 2048 tokens and request JSON mode. DeepSeek also receives `ReasoningEffort::None`.
     *   Frontend progress presents real phases and updates the settled-app count from `rule_scan_progress` events.
     *   Build initial config (`global_switch=true`, `general.auto_start=false`, `general.hide_dock_icon=false`) and persist via `cmd_save_config`.
     *   Scan flow may also warm runtime app metadata caches for the Rules page redirect target, but icon payloads remain runtime-only and are never persisted into `config.json`.
@@ -320,15 +322,15 @@ type AppConfig = {
 }
 
 type LLMConfigStatus = {
+  provider: "deepseek" | "openai" | "anthropic" | "gemini"
   model: string
-  base_url: string
   has_api_key: boolean
 }
 
 type LLMConfig = { // Write/test input only; never used as a response or disk schema.
   api_key: string
+  provider: "deepseek" | "openai" | "anthropic" | "gemini"
   model: string
-  base_url: string
 }
 
 ```
@@ -344,7 +346,8 @@ type LLMConfig = { // Write/test input only; never used as a response or disk sc
 2.  **Batch prediction**
     *   Split target apps into requests of at most 20 records and keep at most 2 LLM requests in flight using current `LLMConfig`.
     *   Prompt includes available input source IDs/names and target apps (`name`, `bundle_id`).
-    *   Response format should be strict JSON mapping bundle IDs to input source IDs.
+    *   Resolve the explicit provider to a `genai::adapter::AdapterKind` instead of inferring it from the model string. This keeps arbitrary valid model names on the selected provider's native protocol.
+    *   Every provider uses temperature `0.1`, a 60-second request timeout, a 2048-token batch output cap, and JSON response mode. DeepSeek additionally disables reasoning. Response content must still be parsed and validated as a JSON mapping from bundle IDs to input source IDs.
     *   If a provider request times out or its response cannot be parsed or validated, keep successful batches and omit that batch's missing rules. Do not retry within the same scan and do not create deterministic fallback rules.
 3.  **Validation**
     *   If returned ID is not in `input_sources`, treat that app prediction as invalid.
