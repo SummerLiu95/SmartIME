@@ -175,7 +175,19 @@ export default function LLMOnboardingPage() {
               </button>
             </div>
             {hasApiKey && !preview && (
-              <button type="button" className="text-xs text-red-600" disabled={busy || status === "testing"} onClick={handleDeleteKey}>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-fit items-center rounded-md border border-red-200 px-2.5",
+                  "text-xs font-medium text-red-600 transition-colors",
+                  "hover:border-red-300 hover:bg-red-50 hover:text-red-700",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                  "dark:border-red-900 dark:hover:border-red-800 dark:hover:bg-red-950/40"
+                )}
+                disabled={busy || status === "testing"}
+                onClick={handleDeleteKey}
+              >
                 删除已保存的密钥
               </button>
             )}
